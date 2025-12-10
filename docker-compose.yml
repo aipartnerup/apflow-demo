@@ -12,25 +12,10 @@ services:
       - RATE_LIMIT_ENABLED=true
       - RATE_LIMIT_DAILY_PER_USER=10
       - RATE_LIMIT_DAILY_PER_IP=50
-      - REDIS_URL=redis://redis:6379
       - AIPARTNERUPFLOW_API_PROTOCOL=a2a
       - AIPARTNERUPFLOW_API_HOST=0.0.0.0
       - AIPARTNERUPFLOW_API_PORT=8000
-    depends_on:
-      - redis
     volumes:
       - ./demo:/app/demo
     restart: unless-stopped
-  
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis-data:/data
-    restart: unless-stopped
-    command: redis-server --appendonly yes
-
-volumes:
-  redis-data:
 

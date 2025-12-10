@@ -1,16 +1,25 @@
 # aipartnerupflow-demo
 
-Demo deployment of aipartnerupflow with rate limiting and pre-computed results.
+Demo deployment of aipartnerupflow with rate limiting and quota management.
 
-This is an independent application that wraps `aipartnerupflow` as a core library, adding demo-specific features like:
-- Rate limiting (per user/IP daily limits)
-- Pre-computed demo results (to avoid LLM API costs)
-- Demo-specific API middleware
-- Usage tracking
+This is an independent application that wraps `aipartnerupflow` (v0.6.0+) as a core library, adding demo-specific features like:
+- **LLM Quota Management**: Per-user task tree limits with LLM-consuming restrictions
+- **Rate limiting**: Per user/IP daily limits
+- **Built-in Demo Mode**: Uses aipartnerupflow v0.6.0's `use_demo` parameter for automatic demo data fallback
+- **User Identification**: Browser fingerprinting + session cookie hybrid approach (no registration required)
+- **Demo-specific API middleware**: Quota checking and demo data injection
+- **Usage tracking**: Task execution and quota usage statistics
+- **Concurrency control**: System-wide and per-user concurrent task tree limits
 
 ## Architecture
 
-This application uses `aipartnerupflow[all]` as a dependency and wraps its API with demo-specific middleware and extensions.
+This application uses `aipartnerupflow[all]>=0.6.0` as a dependency and leverages new v0.6.0 features:
+- **TaskRoutes Extension**: Uses `task_routes_class` parameter (no monkey patching)
+- **Task Tree Lifecycle Hooks**: Uses `register_task_tree_hook()` for explicit lifecycle events
+- **Executor-Specific Hooks**: Uses `add_executor_hook()` for quota checks at executor level
+- **Built-in Demo Mode**: Uses `use_demo` parameter for automatic demo data
+- **Automatic User ID Extraction**: Leverages JWT extraction with browser fingerprinting fallback
+- **Database Storage**: Uses the same database as aipartnerupflow (DuckDB/PostgreSQL) for quota tracking, no Redis required
 
 ## Quick Start
 
@@ -44,19 +53,83 @@ See `.env.example` for configuration options.
 Key environment variables:
 - `DEMO_MODE=true`: Enable demo mode
 - `RATE_LIMIT_ENABLED=true`: Enable rate limiting
-- `RATE_LIMIT_DAILY_PER_USER=10`: Daily limit per user
+- `RATE_LIMIT_DAILY_PER_USER=10`: Total task trees per day (free users)
+- `RATE_LIMIT_DAILY_LLM_PER_USER=1`: LLM-consuming task trees per day (free users)
+- `RATE_LIMIT_DAILY_PER_USER_PREMIUM=10`: Total task trees per day (premium users)
+- `MAX_CONCURRENT_TASK_TREES=10`: System-wide concurrent task trees
+- `MAX_CONCURRENT_TASK_TREES_PER_USER=1`: Per-user concurrent task trees
 - `RATE_LIMIT_DAILY_PER_IP=50`: Daily limit per IP
-- `REDIS_URL=redis://localhost:6379`: Redis connection
+
+**Note**: Rate limiting uses the same database as aipartnerupflow (DuckDB/PostgreSQL), no Redis required.
+
+## LLM Quota System
+
+The demo includes a comprehensive LLM quota management system:
+
+### User Identification
+
+**No Registration Required**: The demo uses browser fingerprinting + session cookie approach:
+- **Session Cookie**: Set on first request (`demo_session_id`), persists for 30 days
+- **Browser Fingerprint**: Generated from User-Agent + IP + headers (fallback if cookie cleared)
+- **JWT Support**: If JWT token is provided, user_id is extracted automatically (aipartnerupflow v0.6.0)
+- **Privacy-Friendly**: No personal data collected, fingerprints are hashed
+
+### Free Users (No LLM Key in Header)
+- **Total Quota**: 10 task trees per day
+- **LLM-consuming Limit**: Only 1 LLM-consuming task tree per day
+- **Concurrency**: 1 task tree at a time
+- **Behavior**: When LLM quota exceeded, uses built-in demo mode (`use_demo=True`)
+
+### Premium Users (LLM Key in Header)
+- **Total Quota**: 10 task trees per day
+- **LLM-consuming Limit**: All 10 can be LLM-consuming (no separate limit)
+- **Concurrency**: 1 task tree at a time
+- **Behavior**: Uses own LLM API keys, no demo data fallback
+
+### Usage
+
+**Free User Example** (No authentication required):
+```bash
+# First LLM-consuming task tree - succeeds
+# User ID is automatically generated from browser fingerprint
+curl -X POST http://localhost:8000/tasks \
+  -H "Content-Type: application/json" \
+  -d '{"method": "tasks.generate", "params": {"requirement": "..."}}'
+
+# Second LLM-consuming task tree - uses built-in demo mode
+# Executor hooks automatically set use_demo=True when quota exceeded
+curl -X POST http://localhost:8000/tasks \
+  -H "Content-Type: application/json" \
+  -d '{"method": "tasks.generate", "params": {"requirement": "..."}}'
+```
+
+**Premium User Example** (With LLM API Key):
+```bash
+# Provide LLM API key in header
+# All 10 task trees can be LLM-consuming
+curl -X POST http://localhost:8000/tasks \
+  -H "Content-Type: application/json" \
+  -H "X-LLM-API-KEY: openai:sk-xxx..." \
+  -d '{"method": "tasks.generate", "params": {"requirement": "..."}}'
+```
+
+**Check Quota Status**:
+```bash
+# User ID is automatically detected from session cookie or browser fingerprint
+curl http://localhost:8000/api/quota/status
+```
+
+See `docs/requirements.md` and `docs/IMPLEMENTATION.md` for detailed documentation.
 
 ## Deployment
 
 ### Local Development
 
 ```bash
-# Start with docker-compose (includes Redis)
+# Start with docker-compose
 docker-compose up
 
-# Or run directly (requires Redis running)
+# Or run directly (uses same database as aipartnerupflow)
 python -m aipartnerupflow_demo.main
 ```
 
@@ -75,7 +148,7 @@ python -m aipartnerupflow_demo.main
 3. **Or deploy to cloud**:
    - Update environment variables in `.env` or docker-compose.yml
    - Set `DEMO_MODE=true` and `RATE_LIMIT_ENABLED=true`
-   - Configure Redis URL
+   - Configure database connection (same as aipartnerupflow)
    - Deploy to your cloud provider
 
 ### Integration with aipartnerupflow-webapp

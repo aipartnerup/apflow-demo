@@ -1,131 +1,122 @@
 """
-Usage tracker extension
+Database-based usage tracker extension
 
-Tracks demo usage statistics for analytics.
+Uses the same database as aipartnerupflow (DuckDB/PostgreSQL) instead of Redis.
 """
 
-import json
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any
-import redis
+from aipartnerupflow.core.storage import get_default_session
+from aipartnerupflow_demo.storage.quota_repository import QuotaRepository
 from aipartnerupflow_demo.config.settings import settings
 
 
 class UsageTracker:
-    """Track demo usage statistics"""
-    
-    _redis_client: Optional[redis.Redis] = None
+    """Usage tracker using database storage (same as aipartnerupflow)"""
     
     @classmethod
-    def _get_redis_client(cls) -> Optional[redis.Redis]:
-        """Get Redis client (singleton)"""
-        if cls._redis_client is None:
-            try:
-                cls._redis_client = redis.from_url(
-                    settings.redis_url,
-                    db=settings.redis_db,
-                    decode_responses=True
-                )
-                cls._redis_client.ping()
-            except Exception:
-                return None
-        return cls._redis_client
+    def _get_repository(cls) -> Optional[QuotaRepository]:
+        """Get quota repository instance"""
+        if not settings.rate_limit_enabled:
+            return None
+        
+        try:
+            session = get_default_session()
+            return QuotaRepository(session)
+        except Exception as e:
+            print(f"Warning: Failed to get database session: {e}. Usage tracking disabled.")
+            return None
     
     @classmethod
-    async def track_request(
-        cls,
-        endpoint: str,
-        user_id: Optional[str] = None,
-        ip_address: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
-    ) -> None:
-        """
-        Track a request
-        
-        Args:
-            endpoint: API endpoint
-            user_id: Optional user ID
-            ip_address: IP address
-            metadata: Optional metadata
-        """
-        redis_client = cls._get_redis_client()
-        if not redis_client:
-            return
-        
-        timestamp = datetime.now(timezone.utc).isoformat()
-        
-        # Store request log
-        log_key = f"usage:requests:{datetime.now(timezone.utc).date().isoformat()}"
-        log_entry = {
-            "timestamp": timestamp,
-            "endpoint": endpoint,
-            "user_id": user_id,
-            "ip_address": ip_address,
-            "metadata": metadata or {},
-        }
-        redis_client.lpush(log_key, json.dumps(log_entry))
-        redis_client.expire(log_key, 86400 * 7)  # Keep for 7 days
-    
-    @classmethod
-    async def track_task_execution(
+    def log_task_execution(
         cls,
         task_id: str,
         user_id: Optional[str] = None,
-        used_demo_result: bool = False,
+        is_demo: bool = False,
+        inputs: Optional[Dict[str, Any]] = None,
+        result: Optional[Any] = None,
     ) -> None:
         """
-        Track task execution
+        Log task execution
         
         Args:
             task_id: Task ID
             user_id: Optional user ID
-            used_demo_result: Whether demo result was used
+            is_demo: Whether this was a demo execution
+            inputs: Optional task inputs
+            result: Optional task result
         """
-        redis_client = cls._get_redis_client()
-        if not redis_client:
+        if not settings.rate_limit_enabled:
             return
         
-        # Increment counters
-        today = datetime.now(timezone.utc).date().isoformat()
+        repo = cls._get_repository()
+        if not repo:
+            return
         
-        # Total tasks
-        redis_client.incr(f"usage:tasks:total:{today}")
-        redis_client.expire(f"usage:tasks:total:{today}", 86400 * 7)
-        
-        # Demo tasks
-        if used_demo_result:
-            redis_client.incr(f"usage:tasks:demo:{today}")
-            redis_client.expire(f"usage:tasks:demo:{today}", 86400 * 7)
-        
-        # Per user
-        if user_id:
-            redis_client.incr(f"usage:tasks:user:{user_id}:{today}")
-            redis_client.expire(f"usage:tasks:user:{user_id}:{today}", 86400 * 7)
+        try:
+            today = datetime.now(timezone.utc).date().isoformat()
+            
+            # Increment total task count
+            repo.increment_usage_stat(today, "total", "global", 1)
+            
+            # Increment demo task count if demo
+            if is_demo:
+                repo.increment_usage_stat(today, "demo", "global", 1)
+            
+            # Increment user-specific count
+            if user_id:
+                repo.increment_usage_stat(today, "user", user_id, 1)
+        except Exception as e:
+            print(f"Warning: Failed to log task execution: {e}")
     
     @classmethod
-    async def get_stats(cls, date: Optional[str] = None) -> Dict[str, Any]:
+    def get_usage_stats(
+        cls,
+        date: Optional[str] = None,
+        user_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
         """
         Get usage statistics
         
         Args:
             date: Date in ISO format (YYYY-MM-DD), defaults to today
+            user_id: Optional user ID for user-specific stats
             
         Returns:
-            Dictionary with statistics
+            Dictionary with usage statistics
         """
-        redis_client = cls._get_redis_client()
-        if not redis_client:
-            return {}
+        if not settings.rate_limit_enabled:
+            return {
+                "date": date or datetime.now(timezone.utc).date().isoformat(),
+                "total_tasks": 0,
+                "demo_tasks": 0,
+                "user_tasks": 0,
+            }
         
-        if date is None:
-            date = datetime.now(timezone.utc).date().isoformat()
+        repo = cls._get_repository()
+        if not repo:
+            return {
+                "date": date or datetime.now(timezone.utc).date().isoformat(),
+                "database_unavailable": True,
+                "total_tasks": 0,
+                "demo_tasks": 0,
+                "user_tasks": 0,
+            }
         
-        total_tasks = redis_client.get(f"usage:tasks:total:{date}")
-        demo_tasks = redis_client.get(f"usage:tasks:demo:{date}")
+        target_date = date or datetime.now(timezone.utc).date().isoformat()
         
-        return {
-            "date": date,
-            "total_tasks": int(total_tasks) if total_tasks else 0,
-            "demo_tasks": int(demo_tasks) if demo_tasks else 0,
+        total_tasks = repo.get_usage_stat(target_date, "total", "global")
+        demo_tasks = repo.get_usage_stat(target_date, "demo", "global")
+        
+        result = {
+            "date": target_date,
+            "total_tasks": total_tasks,
+            "demo_tasks": demo_tasks,
         }
+        
+        if user_id:
+            user_tasks = repo.get_usage_stat(target_date, "user", user_id)
+            result["user_tasks"] = user_tasks
+        
+        return result
 

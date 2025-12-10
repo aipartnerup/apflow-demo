@@ -1,7 +1,9 @@
 """
 Demo API server
 
-Wraps aipartnerupflow API with demo-specific middleware.
+Wraps aipartnerupflow API with demo-specific middleware and quota-aware routes.
+
+Uses aipartnerupflow v0.6.0's task_routes_class parameter for clean extension.
 """
 
 import os
@@ -9,12 +11,17 @@ from typing import Any
 from aipartnerupflow.api.main import create_app_by_protocol
 from aipartnerupflow_demo.api.middleware.rate_limit import RateLimitMiddleware
 from aipartnerupflow_demo.api.middleware.demo_mode import DemoModeMiddleware
+from aipartnerupflow_demo.api.middleware.session_cookie import SessionCookieMiddleware
+from aipartnerupflow_demo.api.a2a_server import create_quota_a2a_server
 from aipartnerupflow_demo.config.settings import settings
+from aipartnerupflow.core.utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 
 def create_demo_app() -> Any:
     """
-    Create demo application with middleware
+    Create demo application with middleware and quota-aware routes
     
     Returns:
         Starlette/FastAPI application instance
@@ -26,19 +33,59 @@ def create_demo_app() -> Any:
     
     # Create base aipartnerupflow application
     protocol = settings.aipartnerupflow_api_protocol
-    base_app = create_app_by_protocol(protocol=protocol)
+    
+    # Use quota-aware server for A2A protocol
+    if protocol == "a2a" and settings.rate_limit_enabled:
+        logger.info("Creating A2A server with quota-aware TaskRoutes")
+        base_app = create_quota_a2a_server(
+            verify_token_secret_key=settings.aipartnerupflow_jwt_secret_key,
+            verify_token_algorithm=settings.aipartnerupflow_jwt_algorithm,
+            base_url=settings.aipartnerupflow_base_url,
+            enable_system_routes=settings.aipartnerupflow_enable_system_routes,
+            enable_docs=settings.aipartnerupflow_enable_docs,
+        )
+    else:
+        # Use standard server for other protocols or when rate limiting is disabled
+        base_app = create_app_by_protocol(protocol=protocol)
     
     # Add demo middleware
     # Note: Middleware order matters - add them in reverse order of execution
     # (last added is first executed)
     
-    # Add demo mode middleware (runs first, can intercept requests)
+    # Add session cookie middleware (runs first, sets demo_session_id cookie)
+    # This enables browser fingerprinting + session cookie user identification
+    base_app.add_middleware(SessionCookieMiddleware)
+    
+    # Add demo mode middleware (runs after session cookie)
     if settings.demo_mode:
         base_app.add_middleware(DemoModeMiddleware)
     
     # Add rate limiting middleware (runs after demo mode)
     if settings.rate_limit_enabled:
         base_app.add_middleware(RateLimitMiddleware)
+    
+    # Add quota status routes if rate limiting is enabled
+    if settings.rate_limit_enabled:
+        from starlette.routing import Route
+        from starlette.requests import Request
+        from aipartnerupflow_demo.api.routes.quota_routes import QuotaRoutes
+        
+        quota_routes = QuotaRoutes()
+        
+        async def quota_status_handler(request: Request):
+            return await quota_routes.handle_quota_status(request)
+        
+        async def quota_system_stats_handler(request: Request):
+            return await quota_routes.handle_system_stats(request)
+        
+        # Add quota routes
+        base_app.routes.append(
+            Route("/api/quota/status", quota_status_handler, methods=["GET"])
+        )
+        base_app.routes.append(
+            Route("/api/quota/system-stats", quota_system_stats_handler, methods=["GET"])
+        )
+        logger.info("Added quota status routes: /api/quota/status, /api/quota/system-stats")
     
     return base_app
 

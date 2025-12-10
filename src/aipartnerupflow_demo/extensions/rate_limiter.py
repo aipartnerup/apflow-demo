@@ -1,56 +1,31 @@
 """
-Rate limiter extension for demo deployment
+Database-based rate limiter extension
 
-Implements per-user and per-IP daily rate limiting using Redis.
+Uses the same database as aipartnerupflow (DuckDB/PostgreSQL) instead of Redis.
 """
 
-import json
-import hashlib
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from typing import Optional
-import redis
+from aipartnerupflow.core.storage import get_default_session
+from aipartnerupflow_demo.storage.quota_repository import QuotaRepository
 from aipartnerupflow_demo.config.settings import settings
 
 
 class RateLimiter:
-    """Rate limiter for demo deployment"""
-    
-    _redis_client: Optional[redis.Redis] = None
+    """Rate limiter using database storage (same as aipartnerupflow)"""
     
     @classmethod
-    def _get_redis_client(cls) -> Optional[redis.Redis]:
-        """Get Redis client (singleton)"""
-        if cls._redis_client is None:
-            try:
-                cls._redis_client = redis.from_url(
-                    settings.redis_url,
-                    db=settings.redis_db,
-                    decode_responses=True
-                )
-                # Test connection
-                cls._redis_client.ping()
-            except Exception as e:
-                print(f"Warning: Redis connection failed: {e}. Rate limiting disabled.")
-                return None
-        return cls._redis_client
-    
-    @classmethod
-    def _get_user_key(cls, user_id: Optional[str]) -> Optional[str]:
-        """Get rate limit key for user"""
-        if not user_id:
+    def _get_repository(cls) -> Optional[QuotaRepository]:
+        """Get quota repository instance"""
+        if not settings.rate_limit_enabled:
             return None
-        return f"rate_limit:user:{user_id}"
-    
-    @classmethod
-    def _get_ip_key(cls, ip_address: str) -> str:
-        """Get rate limit key for IP"""
-        return f"rate_limit:ip:{ip_address}"
-    
-    @classmethod
-    def _get_today_key(cls, base_key: str) -> str:
-        """Get key for today's date"""
-        today = datetime.now(timezone.utc).date().isoformat()
-        return f"{base_key}:{today}"
+        
+        try:
+            session = get_default_session()
+            return QuotaRepository(session)
+        except Exception as e:
+            print(f"Warning: Failed to get database session: {e}. Rate limiting disabled.")
+            return None
     
     @classmethod
     def check_limit(
@@ -71,18 +46,18 @@ class RateLimiter:
             
         Returns:
             Tuple of (allowed, info_dict)
-            info_dict contains: allowed, user_count, user_limit, ip_count, ip_limit
         """
         if not settings.rate_limit_enabled:
             return True, {"allowed": True, "reason": "rate_limiting_disabled"}
         
-        redis_client = cls._get_redis_client()
-        if not redis_client:
-            # If Redis is not available, allow request but log warning
-            return True, {"allowed": True, "reason": "redis_unavailable"}
+        repo = cls._get_repository()
+        if not repo:
+            return True, {"allowed": True, "reason": "database_unavailable"}
         
         limit_per_user = limit_per_user or settings.rate_limit_daily_per_user
         limit_per_ip = limit_per_ip or settings.rate_limit_daily_per_ip
+        
+        today = datetime.now(timezone.utc).date().isoformat()
         
         result = {
             "allowed": True,
@@ -94,10 +69,7 @@ class RateLimiter:
         
         # Check user limit
         if user_id:
-            user_key = cls._get_today_key(cls._get_user_key(user_id))
-            user_count = redis_client.get(user_key)
-            user_count = int(user_count) if user_count else 0
-            
+            user_count = repo.get_quota_count(user_id, today, "total")
             result["user_count"] = user_count
             
             if user_count >= limit_per_user:
@@ -105,12 +77,9 @@ class RateLimiter:
                 result["reason"] = "user_limit_exceeded"
                 return False, result
         
-        # Check IP limit
+        # Check IP limit (using IP as user_id for tracking)
         if ip_address:
-            ip_key = cls._get_today_key(cls._get_ip_key(ip_address))
-            ip_count = redis_client.get(ip_key)
-            ip_count = int(ip_count) if ip_count else 0
-            
+            ip_count = repo.get_quota_count(f"ip:{ip_address}", today, "total")
             result["ip_count"] = ip_count
             
             if ip_count >= limit_per_ip:
@@ -121,13 +90,13 @@ class RateLimiter:
         return True, result
     
     @classmethod
-    def increment(
+    def record_request(
         cls,
         user_id: Optional[str] = None,
         ip_address: Optional[str] = None,
     ) -> None:
         """
-        Increment rate limit counters
+        Record a request (increment counters)
         
         Args:
             user_id: Optional user ID
@@ -136,55 +105,273 @@ class RateLimiter:
         if not settings.rate_limit_enabled:
             return
         
-        redis_client = cls._get_redis_client()
-        if not redis_client:
+        repo = cls._get_repository()
+        if not repo:
             return
         
-        # Increment user counter
-        if user_id:
-            user_key = cls._get_today_key(cls._get_user_key(user_id))
-            redis_client.incr(user_key)
-            redis_client.expire(user_key, 86400)  # 24 hours
+        today = datetime.now(timezone.utc).date().isoformat()
         
-        # Increment IP counter
+        if user_id:
+            repo.increment_quota_count(user_id, today, "total", 1)
+        
         if ip_address:
-            ip_key = cls._get_today_key(cls._get_ip_key(ip_address))
-            redis_client.incr(ip_key)
-            redis_client.expire(ip_key, 86400)  # 24 hours
+            repo.increment_quota_count(f"ip:{ip_address}", today, "total", 1)
     
     @classmethod
-    def get_usage(
+    def check_task_tree_quota(
         cls,
-        user_id: Optional[str] = None,
-        ip_address: Optional[str] = None,
-    ) -> dict:
+        user_id: str,
+        is_llm_consuming: bool,
+        has_llm_key: bool = False,
+    ) -> tuple[bool, dict]:
         """
-        Get current usage statistics
+        Check if user can create a new task tree
         
         Args:
-            user_id: Optional user ID
-            ip_address: IP address
+            user_id: User ID
+            is_llm_consuming: Whether the task tree is LLM-consuming
+            has_llm_key: Whether user has LLM key in header (premium user)
             
         Returns:
-            Dictionary with usage statistics
+            Tuple of (allowed, info_dict)
         """
-        redis_client = cls._get_redis_client()
-        if not redis_client:
-            return {"user_count": 0, "ip_count": 0}
+        if not settings.rate_limit_enabled:
+            return True, {"allowed": True, "reason": "rate_limiting_disabled"}
         
-        result = {}
+        repo = cls._get_repository()
+        if not repo:
+            return True, {"allowed": True, "reason": "database_unavailable"}
         
-        if user_id:
-            user_key = cls._get_today_key(cls._get_user_key(user_id))
-            user_count = redis_client.get(user_key)
-            result["user_count"] = int(user_count) if user_count else 0
-            result["user_limit"] = settings.rate_limit_daily_per_user
+        today = datetime.now(timezone.utc).date().isoformat()
         
-        if ip_address:
-            ip_key = cls._get_today_key(cls._get_ip_key(ip_address))
-            ip_count = redis_client.get(ip_key)
-            result["ip_count"] = int(ip_count) if ip_count else 0
-            result["ip_limit"] = settings.rate_limit_daily_per_ip
+        # Get current counts
+        total_count = repo.get_quota_count(user_id, today, "total")
+        llm_count = repo.get_quota_count(user_id, today, "llm")
         
-        return result
+        # Determine limits based on user type
+        if has_llm_key:
+            # Premium user: 10 total, no separate LLM limit
+            total_limit = settings.rate_limit_daily_per_user_premium
+            llm_limit = total_limit  # No separate limit for premium users
+        else:
+            # Free user: 10 total, only 1 LLM-consuming
+            total_limit = settings.rate_limit_daily_per_user
+            llm_limit = settings.rate_limit_daily_llm_per_user
+        
+        result = {
+            "allowed": True,
+            "total_count": total_count,
+            "total_limit": total_limit,
+            "llm_count": llm_count,
+            "llm_limit": llm_limit,
+            "is_premium": has_llm_key,
+        }
+        
+        # Check total quota
+        if total_count >= total_limit:
+            result["allowed"] = False
+            result["reason"] = "total_quota_exceeded"
+            return False, result
+        
+        # Check LLM-consuming quota (only for free users)
+        if not has_llm_key and is_llm_consuming:
+            if llm_count >= llm_limit:
+                result["allowed"] = False
+                result["reason"] = "llm_quota_exceeded"
+                result["llm_quota_exceeded"] = True
+                return False, result
+        
+        return True, result
+    
+    @classmethod
+    def check_concurrency_limit(
+        cls,
+        user_id: str,
+    ) -> tuple[bool, dict]:
+        """
+        Check if user can start a new concurrent task tree
+        
+        Args:
+            user_id: User ID
+            
+        Returns:
+            Tuple of (allowed, info_dict)
+        """
+        if not settings.rate_limit_enabled:
+            return True, {"allowed": True, "reason": "rate_limiting_disabled"}
+        
+        repo = cls._get_repository()
+        if not repo:
+            return True, {"allowed": True, "reason": "database_unavailable"}
+        
+        # Check global concurrency
+        global_current = repo.get_concurrency_count("system", "global")
+        global_limit = settings.max_concurrent_task_trees
+        
+        # Check user concurrency
+        user_current = repo.get_concurrency_count("user", user_id)
+        user_limit = settings.max_concurrent_task_trees_per_user
+        
+        result = {
+            "allowed": True,
+            "global_current": global_current,
+            "global_limit": global_limit,
+            "user_current": user_current,
+            "user_limit": user_limit,
+        }
+        
+        # Check global limit
+        if global_current >= global_limit:
+            result["allowed"] = False
+            result["reason"] = "system_concurrency_limit_exceeded"
+            return False, result
+        
+        # Check user limit
+        if user_current >= user_limit:
+            result["allowed"] = False
+            result["reason"] = "user_concurrency_limit_exceeded"
+            return False, result
+        
+        return True, result
+    
+    @classmethod
+    def start_task_tree(
+        cls,
+        user_id: str,
+        task_tree_id: str,
+        is_llm_consuming: bool,
+    ) -> bool:
+        """
+        Start tracking a task tree
+        
+        Args:
+            user_id: User ID
+            task_tree_id: Task tree ID
+            is_llm_consuming: Whether task tree is LLM-consuming
+            
+        Returns:
+            True if tracking started successfully
+        """
+        if not settings.rate_limit_enabled:
+            return False
+        
+        repo = cls._get_repository()
+        if not repo:
+            return False
+        
+        try:
+            today = datetime.now(timezone.utc).date().isoformat()
+            
+            # Increment quota counters
+            repo.increment_quota_count(user_id, today, "total", 1)
+            if is_llm_consuming:
+                repo.increment_quota_count(user_id, today, "llm", 1)
+            
+            # Increment concurrency counters
+            repo.increment_concurrency("system", "global", 1)
+            repo.increment_concurrency("user", user_id, 1)
+            
+            # Start task tree tracking
+            repo.start_task_tree(task_tree_id, user_id, is_llm_consuming)
+            
+            return True
+        except Exception as e:
+            print(f"Warning: Failed to start task tree tracking: {e}")
+            return False
+    
+    @classmethod
+    def complete_task_tree(
+        cls,
+        user_id: str,
+        task_tree_id: str,
+    ) -> None:
+        """
+        Complete tracking for a task tree
+        
+        Args:
+            user_id: User ID
+            task_tree_id: Task tree ID
+        """
+        if not settings.rate_limit_enabled:
+            return
+        
+        repo = cls._get_repository()
+        if not repo:
+            return
+        
+        try:
+            # Get task tree tracking to check if it was LLM-consuming
+            tracking = repo.complete_task_tree(task_tree_id)
+            
+            if tracking:
+                # Decrement concurrency counters
+                repo.decrement_concurrency("system", "global", 1)
+                repo.decrement_concurrency("user", user_id, 1)
+        except Exception as e:
+            print(f"Warning: Failed to complete task tree tracking: {e}")
+    
+    @classmethod
+    def get_user_quota_status(
+        cls,
+        user_id: str,
+        has_llm_key: bool = False,
+    ) -> dict:
+        """
+        Get user's quota status
+        
+        Args:
+            user_id: User ID
+            has_llm_key: Whether user has LLM key (premium user)
+            
+        Returns:
+            Dictionary with quota status information
+        """
+        if not settings.rate_limit_enabled:
+            return {
+                "rate_limiting_enabled": False,
+                "total_used": 0,
+                "total_limit": 0,
+                "llm_used": 0,
+                "llm_limit": 0,
+            }
+        
+        repo = cls._get_repository()
+        if not repo:
+            return {
+                "rate_limiting_enabled": True,
+                "database_unavailable": True,
+                "total_used": 0,
+                "total_limit": 0,
+                "llm_used": 0,
+                "llm_limit": 0,
+            }
+        
+        today = datetime.now(timezone.utc).date().isoformat()
+        
+        total_used = repo.get_quota_count(user_id, today, "total")
+        llm_used = repo.get_quota_count(user_id, today, "llm")
+        
+        if has_llm_key:
+            total_limit = settings.rate_limit_daily_per_user_premium
+            llm_limit = total_limit
+        else:
+            total_limit = settings.rate_limit_daily_per_user
+            llm_limit = settings.rate_limit_daily_llm_per_user
+        
+        # Check if quotas are exceeded
+        total_quota_exceeded = total_used >= total_limit
+        llm_quota_exceeded = not has_llm_key and llm_used >= llm_limit
+        
+        return {
+            "rate_limiting_enabled": True,
+            "total_used": total_used,
+            "total_limit": total_limit,
+            "total_remaining": max(0, total_limit - total_used),
+            "total_quota_exceeded": total_quota_exceeded,
+            "llm_used": llm_used,
+            "llm_limit": llm_limit,
+            "llm_remaining": max(0, llm_limit - llm_used),
+            "llm_quota_exceeded": llm_quota_exceeded,
+            "is_premium": has_llm_key,
+        }
 
