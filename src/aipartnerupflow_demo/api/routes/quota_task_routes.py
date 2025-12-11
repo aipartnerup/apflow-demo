@@ -20,7 +20,6 @@ from aipartnerupflow_demo.utils.header_utils import (
     has_llm_key_in_header,
     extract_user_id_from_request,
 )
-from aipartnerupflow_demo.utils.user_identification import generate_user_id_from_request
 from aipartnerupflow_demo.utils.task_detection import (
     detect_task_tree_from_tasks_array,
     is_llm_consuming_task_tree_node,
@@ -51,11 +50,9 @@ class QuotaTaskRoutes(TaskRoutes):
             params = body.get("params", {})
             
             # Extract user info
-            # Priority: JWT (automatic from aipartnerupflow v0.6.0) > Browser fingerprinting > anonymous
+            # Priority: JWT (automatic from aipartnerupflow v0.6.0) > Cookie > Browser fingerprinting
+            # extract_user_id_from_request now handles all fallbacks automatically
             user_id = extract_user_id_from_request(request)
-            if not user_id or user_id == "anonymous":
-                # Fallback to browser fingerprinting for demo environment
-                user_id = generate_user_id_from_request(request)
             is_premium = has_llm_key_in_header(request)
             
             # Handle quota-checked methods

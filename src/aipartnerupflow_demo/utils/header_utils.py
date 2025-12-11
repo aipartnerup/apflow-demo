@@ -1,5 +1,7 @@
 """
-Header parsing utilities for LLM key detection
+Header parsing utilities
+
+Uses aipartnerupflow's built-in LLM key detection.
 """
 
 from typing import Optional
@@ -10,45 +12,41 @@ def has_llm_key_in_header(request: Request) -> bool:
     """
     Check if request contains LLM API key in headers
     
+    Uses aipartnerupflow's LLMAPIKeyMiddleware which extracts X-LLM-API-KEY header
+    and stores it in thread-local context.
+    
     Args:
         request: Starlette request object
         
     Returns:
         True if LLM key is present in headers
     """
-    # Check X-LLM-API-KEY header
-    if request.headers.get("X-LLM-API-KEY"):
-        return True
-    
-    # Check provider-specific headers
-    if request.headers.get("X-OpenAI-API-KEY") or request.headers.get("X-Anthropic-API-KEY"):
-        return True
-    
-    # Check Authorization header for LLM key pattern
-    # Format: "Bearer <key>" or "provider:key"
-    auth_header = request.headers.get("Authorization", "")
-    if auth_header:
-        # Check for Bearer token format
-        if auth_header.startswith("Bearer "):
-            token = auth_header[7:].strip()
-            # Assume it's an LLM key if it's a reasonable length (API keys are usually long)
-            if len(token) > 20:
-                return True
+    # Use aipartnerupflow's built-in LLM key detection
+    # LLMAPIKeyMiddleware extracts X-LLM-API-KEY header and stores it in context
+    try:
+        from aipartnerupflow.core.utils.llm_key_context import get_llm_key_from_header
         
-        # Check for provider:key format
-        if ":" in auth_header and len(auth_header.split(":")) == 2:
-            parts = auth_header.split(":")
-            provider = parts[0].strip().lower()
-            key = parts[1].strip()
-            if provider in ["openai", "anthropic", "google", "llm"] and len(key) > 20:
-                return True
-    
-    return False
+        # Check if LLM key is available in context (set by LLMAPIKeyMiddleware)
+        llm_key = get_llm_key_from_header()
+        if llm_key:
+            return True
+        
+        # Fallback: Check header directly (in case middleware hasn't run yet)
+        # This handles the case where we're checking before middleware processes the request
+        if request.headers.get("X-LLM-API-KEY") or request.headers.get("x-llm-api-key"):
+            return True
+        
+        return False
+    except ImportError:
+        # Fallback if aipartnerupflow is not available (shouldn't happen)
+        return bool(request.headers.get("X-LLM-API-KEY") or request.headers.get("x-llm-api-key"))
 
 
 def extract_llm_key_from_header(request: Request) -> Optional[str]:
     """
     Extract LLM API key from headers
+    
+    Uses aipartnerupflow's built-in LLM key extraction.
     
     Args:
         request: Starlette request object
@@ -56,37 +54,30 @@ def extract_llm_key_from_header(request: Request) -> Optional[str]:
     Returns:
         LLM API key if found, None otherwise
     """
-    # Check X-LLM-API-KEY header
-    llm_key = request.headers.get("X-LLM-API-KEY")
-    if llm_key:
-        return llm_key
-    
-    # Check provider-specific headers
-    openai_key = request.headers.get("X-OpenAI-API-KEY")
-    if openai_key:
-        return openai_key
-    
-    anthropic_key = request.headers.get("X-Anthropic-API-KEY")
-    if anthropic_key:
-        return anthropic_key
-    
-    # Check Authorization header
-    auth_header = request.headers.get("Authorization", "")
-    if auth_header:
-        if auth_header.startswith("Bearer "):
-            return auth_header[7:].strip()
+    try:
+        from aipartnerupflow.core.utils.llm_key_context import get_llm_key_from_header
         
-        if ":" in auth_header:
-            parts = auth_header.split(":")
-            if len(parts) == 2:
-                return parts[1].strip()
-    
-    return None
+        # Get from context (set by LLMAPIKeyMiddleware)
+        llm_key = get_llm_key_from_header()
+        if llm_key:
+            return llm_key
+        
+        # Fallback: Check header directly
+        return request.headers.get("X-LLM-API-KEY") or request.headers.get("x-llm-api-key")
+    except ImportError:
+        # Fallback if aipartnerupflow is not available
+        return request.headers.get("X-LLM-API-KEY") or request.headers.get("x-llm-api-key")
 
 
 def extract_user_id_from_request(request: Request) -> Optional[str]:
     """
-    Extract user ID from request (from JWT or header)
+    Extract user ID from request (from JWT, cookie, or browser fingerprint)
+    
+    Priority:
+    1. JWT token (set by aipartnerupflow JWT middleware) - for authenticated users
+       This is the preferred method as it integrates with aipartnerupflow's user_id extraction
+    2. JWT token from cookie (demo_jwt_token) - extract user_id from token
+    3. Browser fingerprint - fallback for first-time visitors
     
     Args:
         request: Starlette request object
@@ -94,15 +85,24 @@ def extract_user_id_from_request(request: Request) -> Optional[str]:
     Returns:
         User ID if found, None otherwise
     """
-    # Try to get from request state (set by JWT middleware)
+    # Priority 1: Try to get from request state (set by aipartnerupflow JWT middleware)
+    # This is set when JWT token is verified by JWTAuthenticationMiddleware
     user_id = getattr(request.state, "user_id", None)
     if user_id:
         return user_id
     
-    # Try to get from header
-    user_id = request.headers.get("X-User-ID")
-    if user_id:
-        return user_id
+    # Priority 2: Try to extract from JWT token in cookie
+    # This handles the case where cookie exists but JWT middleware hasn't processed it yet
+    jwt_token = request.cookies.get("demo_jwt_token")
+    if jwt_token:
+        from aipartnerupflow_demo.utils.jwt_utils import get_user_id_from_token
+        user_id = get_user_id_from_token(jwt_token)
+        if user_id:
+            return user_id
     
-    return None
+    # Priority 3: Generate from browser fingerprint (will be set as JWT cookie in middleware)
+    # This ensures we always have a user_id, even for first-time visitors
+    from aipartnerupflow_demo.utils.user_identification import generate_user_id_from_fingerprint
+    fingerprint_id = generate_user_id_from_fingerprint(request.headers)
+    return fingerprint_id
 

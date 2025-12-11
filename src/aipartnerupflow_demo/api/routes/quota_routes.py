@@ -14,7 +14,6 @@ from aipartnerupflow_demo.utils.header_utils import (
     has_llm_key_in_header,
     extract_user_id_from_request,
 )
-from aipartnerupflow_demo.utils.user_identification import generate_user_id_from_request
 from aipartnerupflow_demo.config.settings import settings
 from aipartnerupflow.core.utils.logger import get_logger
 from datetime import datetime, timezone
@@ -32,10 +31,9 @@ class QuotaRoutes:
         GET /api/quota/status
         """
         try:
-            # Extract user_id: JWT > Browser fingerprinting > anonymous
+            # Extract user_id: JWT > Cookie > Browser fingerprinting
+            # extract_user_id_from_request now handles all fallbacks automatically
             user_id = extract_user_id_from_request(request)
-            if not user_id or user_id == "anonymous":
-                user_id = generate_user_id_from_request(request)
             is_premium = has_llm_key_in_header(request)
             
             quota_status = RateLimiter.get_user_quota_status(

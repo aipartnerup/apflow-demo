@@ -43,8 +43,11 @@ class DemoSettings(BaseSettings):
     aipartnerupflow_api_port: int = int(os.getenv("AIPARTNERUPFLOW_API_PORT", os.getenv("PORT", "8000")))
     aipartnerupflow_base_url: Optional[str] = os.getenv("AIPARTNERUPFLOW_BASE_URL")
     
-    # JWT (optional)
-    aipartnerupflow_jwt_secret_key: Optional[str] = os.getenv("AIPARTNERUPFLOW_JWT_SECRET_KEY")
+    # JWT (optional, defaults to demo secret key if not provided)
+    aipartnerupflow_jwt_secret_key: Optional[str] = os.getenv(
+        "AIPARTNERUPFLOW_JWT_SECRET_KEY",
+        os.getenv("JWT_SECRET_KEY", "demo-secret-key-change-in-production")
+    )
     aipartnerupflow_jwt_algorithm: str = os.getenv("AIPARTNERUPFLOW_JWT_ALGORITHM", "HS256")
     
     # System routes and docs

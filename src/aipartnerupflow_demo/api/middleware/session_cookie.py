@@ -1,39 +1,98 @@
 """
-Session cookie middleware
+Session cookie middleware with JWT token generation
 
-Sets demo_session_id cookie on first request for user identification.
+Sets demo JWT token cookie on first request for persistent user identification.
+Uses browser fingerprinting to generate stable user IDs, then creates JWT tokens
+that are compatible with aipartnerupflow's JWT middleware.
 """
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
-from aipartnerupflow_demo.utils.user_identification import get_or_create_session_id
+from aipartnerupflow_demo.utils.user_identification import get_or_create_user_id
+from aipartnerupflow_demo.utils.jwt_utils import generate_demo_jwt_token, get_user_id_from_token
+from aipartnerupflow_demo.config.settings import settings
 from aipartnerupflow.core.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
 
 class SessionCookieMiddleware(BaseHTTPMiddleware):
-    """Set demo_session_id cookie on first request"""
+    """
+    Set demo JWT token cookie for persistent user identification
+    
+    This middleware:
+    1. Generates user_id from browser fingerprint or reads from cookie
+    2. Creates JWT token with user_id in 'sub' claim
+    3. Stores JWT token in cookie (demo_jwt_token)
+    
+    aipartnerupflow's JWT middleware automatically reads from cookie, so no need to
+    modify Authorization header.
+    
+    Cookie properties:
+    - httponly=True: Prevents JavaScript access (security)
+    - max_age=1 year: Persistent identification
+    - samesite=lax: CSRF protection
+    - secure: Set based on environment (HTTPS in production)
+    """
+    
+    def __init__(self, app, secret_key: str = None):
+        super().__init__(app)
+        self.secret_key = secret_key
     
     async def dispatch(self, request: Request, call_next):
-        """Process request and set session cookie if needed"""
-        # Get or create session ID
-        session_id = get_or_create_session_id(request)
+        """
+        Process request and set JWT token cookie if needed
         
-        # Process request
+        Flow:
+        1. Check if demo_jwt_token cookie exists
+        2. If not, generate user_id from browser fingerprint and create JWT token
+        3. Store JWT token in cookie (aipartnerupflow's JWT middleware reads from cookie automatically)
+        
+        This middleware processes ALL requests, including /auth/auto-login endpoint.
+        When webapp calls /auth/auto-login on startup, this middleware will:
+        - Generate user_id from browser fingerprint (if cookie doesn't exist)
+        - Create JWT token with user_id
+        - Set demo_jwt_token cookie in response
+        - Subsequent API requests will automatically include this cookie
+        
+        Note: No need to modify Authorization header - aipartnerupflow now supports cookie-based auth.
+        """
+        # Check if JWT token exists in cookie
+        jwt_token = request.cookies.get("demo_jwt_token")
+        user_id = None
+        new_token_generated = False
+        
+        if jwt_token:
+            # Extract user_id from existing token (for logging)
+            user_id = get_user_id_from_token(jwt_token)
+        else:
+            # No token exists, generate new one from browser fingerprint
+            # This creates a stable user_id based on browser characteristics
+            from aipartnerupflow_demo.utils.user_identification import generate_user_id_from_fingerprint
+            user_id = generate_user_id_from_fingerprint(request.headers)
+            jwt_token = generate_demo_jwt_token(user_id, expires_in_days=365)
+            new_token_generated = True
+            logger.debug(f"Generated new JWT token from fingerprint for user: {user_id[:20]}...")
+        
+        # Process request (aipartnerupflow's JWT middleware will read token from cookie automatically)
         response = await call_next(request)
         
-        # Set cookie if not already set
-        if "demo_session_id" not in request.cookies:
+        # Set cookie if not already set or if new token was generated (persistent for 1 year)
+        if (new_token_generated or "demo_jwt_token" not in request.cookies) and jwt_token:
+            # Determine secure flag based on environment
+            # In production with HTTPS, set secure=True
+            secure = settings.aipartnerupflow_base_url and settings.aipartnerupflow_base_url.startswith("https")
+            
             response.set_cookie(
-                key="demo_session_id",
-                value=session_id,
-                max_age=30 * 24 * 60 * 60,  # 30 days
-                httponly=True,
-                samesite="lax",
-                secure=False,  # Set to True in production with HTTPS
+                key="demo_jwt_token",
+                value=jwt_token,
+                max_age=365 * 24 * 60 * 60,  # 1 year (365 days)
+                httponly=True,  # Prevent JavaScript access
+                samesite="lax",  # CSRF protection
+                secure=secure,  # HTTPS only in production
+                path="/",  # Available for all paths
             )
-            logger.debug(f"Set demo_session_id cookie: {session_id}")
+            logger.debug(f"Set demo_jwt_token cookie for user: {user_id[:20] if user_id else 'unknown'}... (httponly, 1 year)")
         
         return response
 
