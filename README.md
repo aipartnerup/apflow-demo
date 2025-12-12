@@ -160,12 +160,6 @@ Each executor gets a demo task with:
 - `name` = "Demo: {executor_name}"
 - `user_id` = Current user ID (from session cookie or browser fingerprint)
 
-**Initialize Standard Demo Tasks**:
-```bash
-# Creates demo tasks from aipartnerupflow examples
-curl -X POST http://localhost:8000/api/demo/tasks/init
-```
-
 See `docs/requirements.md` and `docs/IMPLEMENTATION.md` for detailed documentation.
 
 ## Deployment

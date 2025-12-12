@@ -115,20 +115,15 @@ def create_demo_app() -> Any:
     
     demo_routes = DemoRoutes()
     
-    async def init_demo_tasks_handler(request: Request):
-        return await demo_routes.handle_init_demo_tasks(request)
-    
     async def init_executor_demo_tasks_handler(request: Request):
         return await demo_routes.handle_init_executor_demo_tasks(request)
     
     # Add demo routes
-    base_app.routes.append(
-        Route("/api/demo/tasks/init", init_demo_tasks_handler, methods=["POST"])
-    )
+    # Use /api/demo/tasks/init-executors instead
     base_app.routes.append(
         Route("/api/demo/tasks/init-executors", init_executor_demo_tasks_handler, methods=["POST"])
     )
-    logger.info("Added demo routes: /api/demo/tasks/init, /api/demo/tasks/init-executors")
+    logger.info("Added demo route: /api/demo/tasks/init-executors")
     
     # Add executor metadata routes (always available for demo server)
     from aipartnerupflow_demo.api.routes.executor_routes import ExecutorRoutes
