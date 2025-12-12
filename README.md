@@ -10,6 +10,8 @@ This is an independent application that wraps `aipartnerupflow` (v0.6.0+) as a c
 - **Demo-specific API middleware**: Quota checking and demo data injection
 - **Usage tracking**: Task execution and quota usage statistics
 - **Concurrency control**: System-wide and per-user concurrent task tree limits
+- **Executor Metadata API**: Query executor metadata and schemas using aipartnerupflow's executor_metadata utilities
+- **Executor Demo Tasks**: Automatically generate demo tasks for all executors based on executor_metadata
 
 ## Architecture
 
@@ -117,6 +119,51 @@ curl -X POST http://localhost:8000/tasks \
 ```bash
 # User ID is automatically detected from session cookie or browser fingerprint
 curl http://localhost:8000/api/quota/status
+```
+
+## Executor Metadata API
+
+The demo provides endpoints to query executor metadata using aipartnerupflow's executor_metadata utilities:
+
+**Get All Executor Metadata**:
+```bash
+curl http://localhost:8000/api/executors/metadata
+```
+
+**Get Specific Executor Metadata**:
+```bash
+curl http://localhost:8000/api/executors/metadata/system_info_executor
+```
+
+The metadata includes:
+- `id`: Executor ID
+- `name`: Executor name
+- `description`: Executor description
+- `input_schema`: JSON schema for task inputs
+- `examples`: List of example descriptions
+- `tags`: List of tags
+- `type`: Executor type (optional)
+
+## Executor Demo Tasks Initialization
+
+The demo can automatically create demo tasks for all executors based on executor_metadata:
+
+**Initialize Executor Demo Tasks**:
+```bash
+# Creates one demo task per executor with inputs generated from input_schema
+curl -X POST http://localhost:8000/api/demo/tasks/init-executors
+```
+
+Each executor gets a demo task with:
+- `schemas.method` = executor_id
+- `inputs` = Generated from executor's `input_schema` (uses examples or default values)
+- `name` = "Demo: {executor_name}"
+- `user_id` = Current user ID (from session cookie or browser fingerprint)
+
+**Initialize Standard Demo Tasks**:
+```bash
+# Creates demo tasks from aipartnerupflow examples
+curl -X POST http://localhost:8000/api/demo/tasks/init
 ```
 
 See `docs/requirements.md` and `docs/IMPLEMENTATION.md` for detailed documentation.

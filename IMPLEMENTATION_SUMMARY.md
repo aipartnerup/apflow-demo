@@ -50,17 +50,17 @@ Based on the requirements document (`docs/requirements.md`), the following featu
 ### 6. Quota Tracking Hook ✅
 **File**: `src/aipartnerupflow_demo/extensions/quota_hooks.py`
 
-- ✅ `quota_tracking_post_hook()` - Post-execution hook
+- ✅ `quota_tracking_on_tree_completed()` - Task tree lifecycle hook
 - ✅ Automatically calls `complete_task_tree()` on root task completion
-- ✅ Registered in `main.py` on startup
+- ✅ Registered in `main.py` on startup using `register_task_tree_hook()`
 
-### 7. Executor Wrapper ✅
-**File**: `src/aipartnerupflow_demo/extensions/quota_executor_wrapper.py`
+### 7. Executor-Specific Hooks ✅
+**File**: `src/aipartnerupflow_demo/extensions/quota_executor_hooks.py`
 
-- ✅ `QuotaAwareExecutorWrapper` class
+- ✅ `quota_check_pre_hook()` - Pre-execution hook for LLM executors
 - ✅ Checks quota before LLM API calls
-- ✅ Returns demo data when quota exceeded
-- ⚠️ Note: Created but not yet integrated (can be added via TaskManager hooks if needed)
+- ✅ Sets `use_demo=True` when quota exceeded (uses aipartnerupflow's built-in demo mode)
+- ✅ Registered for LLM-consuming executors (crewai_executor, generate_executor, etc.)
 
 ### 8. Configuration ✅
 **File**: `src/aipartnerupflow_demo/config/settings.py`
@@ -72,13 +72,13 @@ Based on the requirements document (`docs/requirements.md`), the following featu
 
 ### 9. Server Integration ✅
 **Files**: 
-- `src/aipartnerupflow_demo/api/a2a_server.py` - Custom A2A server with quota routes
 - `src/aipartnerupflow_demo/api/server.py` - Main server creation
 - `src/aipartnerupflow_demo/main.py` - Entry point with hook registration
 
-- ✅ Custom A2A server creation with QuotaTaskRoutes
+- ✅ Direct use of `create_a2a_server()` with `auto_initialize_extensions=True`
+- ✅ Custom A2A server creation with QuotaTaskRoutes via `task_routes_class` parameter
 - ✅ Quota routes added to application
-- ✅ Hook registration on startup
+- ✅ Hook registration on startup (after extensions initialized)
 
 ## Implementation Details
 
@@ -111,9 +111,15 @@ Based on the requirements document (`docs/requirements.md`), the following featu
    - Returns demo data if free user exceeds LLM quota
    - Tracks task tree when started
 
-3. **Post-execution Hook**:
-   - Automatically completes task tree tracking
+3. **Task Tree Lifecycle Hook**:
+   - Automatically completes task tree tracking when tree completes
    - Updates concurrency counters
+   - Uses `register_task_tree_hook("on_tree_completed")` for explicit lifecycle events
+
+4. **Executor Pre-Hooks**:
+   - Checks quota before LLM executor execution
+   - Sets `use_demo=True` when quota exceeded
+   - Uses aipartnerupflow's built-in demo mode mechanism
 
 ### Demo Data Mechanism
 
@@ -134,10 +140,10 @@ Based on the requirements document (`docs/requirements.md`), the following featu
 ## Next Steps
 
 1. **Testing**: Write comprehensive tests for quota functionality
-2. **Executor Integration**: Optionally integrate QuotaAwareExecutorWrapper at executor level
-3. **Demo Data**: Pre-compute actual demo results for common task types
-4. **Documentation**: Update API documentation with quota endpoints
-5. **Monitoring**: Add logging and monitoring for quota usage
+2. **Demo Data**: Pre-compute actual demo results for common task types (optional, uses executor's built-in demo mode)
+3. **Documentation**: Update API documentation with quota endpoints
+4. **Monitoring**: Add logging and monitoring for quota usage
+5. **Admin Authentication**: Add admin authentication check for system stats endpoint (currently open to all users)
 
 ## Files Created/Modified
 
@@ -148,22 +154,26 @@ Based on the requirements document (`docs/requirements.md`), the following featu
 - `src/aipartnerupflow_demo/utils/header_utils.py` - Header parsing utilities
 - `src/aipartnerupflow_demo/api/routes/quota_task_routes.py` - Quota-aware task routes
 - `src/aipartnerupflow_demo/api/routes/quota_routes.py` - Quota status routes
-- `src/aipartnerupflow_demo/api/a2a_server.py` - Custom A2A server creation
-- `src/aipartnerupflow_demo/extensions/quota_hooks.py` - Quota tracking hooks
-- `src/aipartnerupflow_demo/extensions/quota_executor_wrapper.py` - Executor wrapper
+- `src/aipartnerupflow_demo/api/routes/executor_routes.py` - Executor metadata API routes
+- `src/aipartnerupflow_demo/extensions/quota_hooks.py` - Quota tracking task tree lifecycle hooks
+- `src/aipartnerupflow_demo/extensions/quota_executor_hooks.py` - Executor-specific pre-hooks for quota checking
+- `src/aipartnerupflow_demo/services/executor_demo_init.py` - Executor demo tasks initialization service
 
 ### Modified Files
 - `src/aipartnerupflow_demo/config/settings.py` - Added quota configuration
 - `src/aipartnerupflow_demo/extensions/rate_limiter.py` - Enhanced with task tree tracking
-- `src/aipartnerupflow_demo/api/server.py` - Added quota routes and custom server
-- `src/aipartnerupflow_demo/main.py` - Added hook registration
-- `README.md` - Updated with LLM quota system documentation
+- `src/aipartnerupflow_demo/api/server.py` - Uses `create_a2a_server()` directly with quota-aware routes
+- `src/aipartnerupflow_demo/main.py` - Simplified to use auto-initialized extensions and hook registration
+- `src/aipartnerupflow_demo/services/demo_init.py` - Added executor demo tasks initialization
+- `README.md` - Updated with LLM quota system documentation and Executor Metadata API
 
 ## Notes
 
-- All quota tracking uses Redis for distributed storage
+- All quota tracking uses the same database as aipartnerupflow (DuckDB/PostgreSQL), no Redis required
 - Quota resets daily at midnight UTC
 - Concurrency limits are enforced in real-time
-- Demo data is optional - system works without it (returns generic demo data)
+- Demo mode uses aipartnerupflow's built-in `use_demo` parameter - executors provide demo data via `get_demo_result()` method
 - Task tree detection happens before execution (static analysis)
+- Extensions are automatically initialized via `create_a2a_server(auto_initialize_extensions=True)`
+- Executor Metadata API provides access to executor schemas and examples for demo task generation
 

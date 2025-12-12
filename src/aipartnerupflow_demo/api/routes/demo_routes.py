@@ -92,3 +92,79 @@ class DemoRoutes:
                 }
             )
 
+    async def handle_init_executor_demo_tasks(self, request: Request) -> JSONResponse:
+        """
+        Handle executor demo task initialization request
+        
+        POST /api/demo/tasks/init-executors
+        
+        This endpoint:
+        1. Extracts user_id from JWT token (via middleware) or request
+        2. Creates demo tasks for all executors based on executor_metadata
+        3. Returns success response with created task count and IDs
+        
+        Each executor gets one demo task with:
+        - executor_id as schemas.method
+        - Demo inputs generated from executor's input_schema
+        - Task name based on executor name
+        
+        User identification is automatic via JWT/cookie middleware.
+        The created tasks will appear in the normal task list via aipartnerupflow's standard API.
+        
+        Returns:
+            JSONResponse with success status, created_count, task_ids, and message
+        """
+        try:
+            # Extract user_id from request (JWT/cookie/browser fingerprint)
+            user_id = extract_user_id_from_request(request)
+            
+            if not user_id:
+                logger.error("Failed to extract user_id from request")
+                return JSONResponse(
+                    status_code=400,
+                    content={
+                        "success": False,
+                        "error": "user_id_not_found",
+                        "message": "Unable to identify user. Please ensure authentication is configured.",
+                    }
+                )
+            
+            logger.info(f"Initializing executor demo tasks for user: {user_id[:20]}...")
+            
+            # Initialize executor demo tasks for this user
+            created_task_ids = await self.demo_init_service.init_executor_demo_tasks_for_user(user_id)
+            
+            if not created_task_ids:
+                return JSONResponse(
+                    status_code=200,
+                    content={
+                        "success": True,
+                        "created_count": 0,
+                        "task_ids": [],
+                        "message": "No executor demo tasks were created (no executors found)",
+                    }
+                )
+            
+            logger.info(f"Successfully initialized {len(created_task_ids)} executor demo tasks for user: {user_id[:20]}...")
+            
+            return JSONResponse(
+                status_code=200,
+                content={
+                    "success": True,
+                    "created_count": len(created_task_ids),
+                    "task_ids": created_task_ids,
+                    "message": f"Executor demo tasks initialized successfully. Created {len(created_task_ids)} tasks.",
+                }
+            )
+            
+        except Exception as e:
+            logger.error(f"Error initializing executor demo tasks: {e}", exc_info=True)
+            return JSONResponse(
+                status_code=500,
+                content={
+                    "success": False,
+                    "error": "initialization_failed",
+                    "message": f"Failed to initialize executor demo tasks: {str(e)}",
+                }
+            )
+

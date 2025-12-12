@@ -70,7 +70,9 @@ class QuotaRoutes:
         GET /api/quota/system-stats
         """
         try:
-            # TODO: Add admin authentication check
+            # Note: Admin authentication check is a future enhancement.
+            # Currently, the system stats endpoint is open to all users for demo purposes.
+            # In production, consider adding authentication/authorization checks here.
             
             # Get global concurrency from database
             from aipartnerupflow.core.storage import get_default_session
