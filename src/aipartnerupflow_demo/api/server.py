@@ -3,12 +3,14 @@ Demo API server
 
 Wraps aipartnerupflow API with demo-specific middleware and quota-aware routes.
 
-Uses aipartnerupflow v0.6.0's task_routes_class parameter for clean extension.
+Uses aipartnerupflow's create_runnable_app() directly with all configuration.
 """
 
 import os
-from typing import Any
-from aipartnerupflow.api.a2a.server import create_a2a_server
+from typing import Any, List
+from starlette.routing import Route
+from starlette.requests import Request
+from aipartnerupflow.api.main import create_runnable_app
 from aipartnerupflow_demo.api.middleware.rate_limit import RateLimitMiddleware
 from aipartnerupflow_demo.api.middleware.demo_mode import DemoModeMiddleware
 from aipartnerupflow_demo.api.middleware.session_cookie import SessionCookieMiddleware
@@ -20,79 +22,28 @@ from aipartnerupflow.core.utils.logger import get_logger
 logger = get_logger(__name__)
 
 
-def create_demo_app() -> Any:
+def _create_custom_routes() -> List[Route]:
     """
-    Create demo application with middleware and quota-aware routes
-    
-    Uses aipartnerupflow/api/a2a/server.py's create_a2a_server() directly with:
-    - auto_initialize_extensions=True: Automatically initializes extensions
-    - task_routes_class=QuotaTaskRoutes: Uses quota-aware TaskRoutes
-    - verify_token_func: Uses demo JWT verification for cookie-based tokens
+    Create custom routes for demo application
     
     Returns:
-        Starlette/FastAPI application instance
+        List of Route objects
     """
-    # Set environment variables for aipartnerupflow
-    aipartnerupflow_env = settings.get_aipartnerupflow_env()
-    for key, value in aipartnerupflow_env.items():
-        os.environ[key] = value
+    routes = []
     
-    # Create base aipartnerupflow application using create_a2a_server() directly
-    # This leverages aipartnerupflow's new API structure
-    logger.info("Creating A2A server with quota-aware TaskRoutes and auto-initialized extensions")
-    
-    custom_app = create_a2a_server(
-        verify_token_func=verify_demo_jwt_token,  # Demo JWT verification for cookie-based tokens
-        verify_token_secret_key=settings.aipartnerupflow_jwt_secret_key,
-        verify_token_algorithm=settings.aipartnerupflow_jwt_algorithm,
-        base_url=settings.aipartnerupflow_base_url,
-        enable_system_routes=settings.aipartnerupflow_enable_system_routes,
-        enable_docs=settings.aipartnerupflow_enable_docs,
-        task_routes_class=QuotaTaskRoutes,  # Quota-aware TaskRoutes
-        auto_initialize_extensions=True,  # Automatically initialize extensions
-    )
-    
-    # Build the app to get the actual Starlette application
-    base_app = custom_app.build()
-    
-    # Add demo middleware
-    # Note: Middleware order matters - add them in reverse order of execution
-    # (last added is first executed)
-    
-    # Add session cookie middleware (runs first, sets demo_jwt_token cookie)
-    # This enables browser fingerprinting + JWT token generation for user identification
-    # Cookie: httponly=True, max_age=1 year, samesite=lax
-    # JWT token is added to Authorization header for aipartnerupflow's JWT middleware
-    base_app.add_middleware(SessionCookieMiddleware)
-    
-    # Add demo mode middleware (runs after session cookie)
-    if settings.demo_mode:
-        base_app.add_middleware(DemoModeMiddleware)
-    
-    # Add rate limiting middleware (runs after demo mode)
-    if settings.rate_limit_enabled:
-        base_app.add_middleware(RateLimitMiddleware)
-    
-    # Add authentication routes (always available for demo server)
-    from starlette.routing import Route
-    from starlette.requests import Request
+    # Authentication routes
     from aipartnerupflow_demo.api.routes.auth_routes import AuthRoutes
-    
     auth_routes = AuthRoutes()
     
     async def auto_login_handler(request: Request):
         return await auth_routes.handle_auto_login(request)
     
-    # Add auth routes
-    base_app.routes.append(
-        Route("/auth/auto-login", auto_login_handler, methods=["GET"])
-    )
+    routes.append(Route("/auth/auto-login", auto_login_handler, methods=["GET"]))
     logger.info("Added auth route: /auth/auto-login")
     
-    # Add quota status routes if rate limiting is enabled
+    # Quota status routes (if rate limiting is enabled)
     if settings.rate_limit_enabled:
         from aipartnerupflow_demo.api.routes.quota_routes import QuotaRoutes
-        
         quota_routes = QuotaRoutes()
         
         async def quota_status_handler(request: Request):
@@ -101,37 +52,23 @@ def create_demo_app() -> Any:
         async def quota_system_stats_handler(request: Request):
             return await quota_routes.handle_system_stats(request)
         
-        # Add quota routes
-        base_app.routes.append(
-            Route("/api/quota/status", quota_status_handler, methods=["GET"])
-        )
-        base_app.routes.append(
-            Route("/api/quota/system-stats", quota_system_stats_handler, methods=["GET"])
-        )
+        routes.append(Route("/api/quota/status", quota_status_handler, methods=["GET"]))
+        routes.append(Route("/api/quota/system-stats", quota_system_stats_handler, methods=["GET"]))
         logger.info("Added quota status routes: /api/quota/status, /api/quota/system-stats")
     
-    # Add demo routes (always available for demo server)
+    # Demo routes
     from aipartnerupflow_demo.api.routes.demo_routes import DemoRoutes
-    
     demo_routes = DemoRoutes()
     
     async def init_executor_demo_tasks_handler(request: Request):
         return await demo_routes.handle_init_executor_demo_tasks(request)
     
-    # Add demo routes
-    # Use /api/demo/tasks/init-executors instead
-    base_app.routes.append(
-        Route("/api/demo/tasks/init-executors", init_executor_demo_tasks_handler, methods=["POST"])
-    )
+    routes.append(Route("/api/demo/tasks/init-executors", init_executor_demo_tasks_handler, methods=["POST"]))
     logger.info("Added demo route: /api/demo/tasks/init-executors")
     
-    # Add executor metadata routes (always available for demo server)
+    # Executor metadata routes
     from aipartnerupflow_demo.api.routes.executor_routes import ExecutorRoutes
-    
     executor_routes = ExecutorRoutes()
-    
-    async def all_executor_metadata_handler(request: Request):
-        return await executor_routes.handle_all_executor_metadata(request)
     
     async def executor_metadata_handler(request: Request):
         # Extract executor_id from URL path
@@ -152,14 +89,74 @@ def create_demo_app() -> Any:
             content={"error": "Not found"}
         )
     
-    # Add executor routes (single route handles both cases)
-    base_app.routes.append(
-        Route("/api/executors/metadata", executor_metadata_handler, methods=["GET"])
-    )
-    base_app.routes.append(
-        Route("/api/executors/metadata/{executor_id}", executor_metadata_handler, methods=["GET"])
-    )
+    routes.append(Route("/api/executors/metadata", executor_metadata_handler, methods=["GET"]))
+    routes.append(Route("/api/executors/metadata/{executor_id}", executor_metadata_handler, methods=["GET"]))
     logger.info("Added executor metadata routes: /api/executors/metadata, /api/executors/metadata/{executor_id}")
     
-    return base_app
+    return routes
 
+
+def _create_custom_middleware() -> List:
+    """
+    Create custom middleware for demo application
+    
+    Returns:
+        List of middleware classes
+    """
+    middleware = []
+    
+    # Session cookie middleware (runs first, sets demo_jwt_token cookie)
+    # This enables browser fingerprinting + JWT token generation for user identification
+    # Cookie: httponly=True, max_age=1 year, samesite=lax
+    # JWT token is added to Authorization header for aipartnerupflow's JWT middleware
+    middleware.append(SessionCookieMiddleware)
+    
+    # Demo mode middleware (runs after session cookie)
+    if settings.demo_mode:
+        middleware.append(DemoModeMiddleware)
+    
+    # Rate limiting middleware (runs after demo mode)
+    if settings.rate_limit_enabled:
+        middleware.append(RateLimitMiddleware)
+    
+    return middleware
+
+
+def create_demo_app() -> Any:
+    """
+    Create demo application with middleware and quota-aware routes
+    
+    Uses aipartnerupflow's create_runnable_app() directly with all configuration.
+    This function handles:
+    - Loading .env file from project directory
+    - Initializing extensions (executors, hooks, storage backends)
+    - Loading custom TaskModel if specified
+    - Auto-initializing examples if database is empty
+    - Creating the application with custom verify_token_func, routes, and middleware
+    
+    Returns:
+        Starlette/FastAPI application instance
+    """
+    # Set environment variables for aipartnerupflow
+    aipartnerupflow_env = settings.get_aipartnerupflow_env()
+    for key, value in aipartnerupflow_env.items():
+        os.environ[key] = value
+    
+    logger.info("Creating demo application with aipartnerupflow's create_runnable_app()")
+    
+    # Use create_runnable_app() directly - it handles everything:
+    # - Loads .env file from project directory
+    # - Initializes extensions (executors, hooks, storage backends)
+    # - Loads custom TaskModel if specified
+    # - Auto-initializes examples if database is empty
+    # - Creates the application with all configuration
+    app = create_runnable_app(
+        protocol="a2a",
+        verify_token_func=verify_demo_jwt_token,  # Demo JWT verification for cookie-based tokens
+        task_routes_class=QuotaTaskRoutes,  # Quota-aware TaskRoutes
+        custom_routes=_create_custom_routes(),  # Custom routes
+        custom_middleware=_create_custom_middleware(),  # Custom middleware
+        auto_initialize_extensions=True,  # Automatically initialize extensions
+    )
+    
+    return app
