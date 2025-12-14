@@ -3,9 +3,10 @@ Executor demo tasks initialization service
 
 Creates demo tasks for all executors based on executor_metadata.
 Each executor gets a demo task with inputs generated from its input_schema.
+For system_info_executor, creates an aggregate task with child tasks for cpu, memory, and disk.
 """
 
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime, timezone
 import asyncio
 from aipartnerupflow.core.extensions.executor_metadata import get_all_executor_metadata
@@ -103,6 +104,179 @@ def _generate_inputs_from_schema(input_schema: Dict[str, Any]) -> Dict[str, Any]
     return inputs
 
 
+def _generate_demo_task_for_system_info_executor(
+    executor_id: str,
+    executor_name: str,
+    user_id: str,
+    base_timestamp: int,
+    task_index: int
+) -> Tuple[List[Dict[str, Any]], List[str]]:
+    """
+    Generate aggregate task for system_info_executor with cpu, memory, disk child tasks
+    
+    Returns:
+        Tuple of (tasks_data list, created_task_ids list)
+    """
+    user_prefix = user_id[:8].replace("_", "-")
+    executor_id_safe = executor_id.replace("_", "-")
+    
+    # Create child tasks for cpu, memory, disk
+    child_tasks = []
+    child_task_ids = []
+    resources = ["cpu", "memory", "disk"]
+    
+    for idx, resource in enumerate(resources):
+        child_task_id = f"demo_executor_{user_prefix}_{executor_id_safe}_{base_timestamp}_{task_index}_child_{idx}"
+        child_task = {
+            "id": child_task_id,
+            "name": f"Demo: {executor_name} - {resource.upper()}",
+            "user_id": user_id,
+            "schemas": {"method": executor_id},
+            "inputs": {"resource": resource},
+            "status": "pending",
+            "parent_id": None,  # Will be set after parent is created
+            "has_children": False,
+        }
+        child_tasks.append(child_task)
+        child_task_ids.append(child_task_id)
+    
+    # Create parent aggregate task
+    parent_task_id = f"demo_executor_{user_prefix}_{executor_id_safe}_{base_timestamp}_{task_index}_parent"
+    # Set dependencies: parent task depends on all child tasks
+    dependencies = [{"id": child_id, "required": True} for child_id in child_task_ids]
+    parent_task = {
+        "id": parent_task_id,
+        "name": f"Demo: {executor_name} (Aggregate)",
+        "user_id": user_id,
+        "schemas": {"method": "aggregate_results_executor"},
+        "inputs": {},  # Will be populated with dependency results by TaskManager
+        "status": "pending",
+        "parent_id": None,
+        "has_children": True,
+        "dependencies": dependencies,
+    }
+    
+    # Set parent_id for child tasks
+    for child_task in child_tasks:
+        child_task["parent_id"] = parent_task_id
+    
+    # Combine all tasks (parent first, then children)
+    all_tasks = [parent_task] + child_tasks
+    all_task_ids = [parent_task_id] + child_task_ids
+    
+    return all_tasks, all_task_ids
+
+
+def _generate_demo_task_for_executor(
+    executor_id: str,
+    executor_name: str,
+    metadata: Dict[str, Any],
+    user_id: str,
+    base_timestamp: int,
+    task_index: int
+) -> Tuple[List[Dict[str, Any]], List[str]]:
+    """
+    Generate demo task(s) for a specific executor
+    
+    Args:
+        executor_id: Executor ID
+        executor_name: Executor name
+        metadata: Executor metadata
+        user_id: User ID
+        base_timestamp: Base timestamp for task ID generation
+        task_index: Task index for unique ID generation
+        
+    Returns:
+        Tuple of (tasks_data list, created_task_ids list)
+    """
+    # Special handling for system_info_executor - create aggregate task
+    if executor_id == "system_info_executor":
+        return _generate_demo_task_for_system_info_executor(
+            executor_id, executor_name, user_id, base_timestamp, task_index
+        )
+    
+    # For other executors, generate inputs based on their specific requirements
+    input_schema = metadata.get("input_schema", {})
+    demo_inputs = {}
+    
+    # Generate inputs based on executor-specific logic
+    if executor_id == "command_executor":
+        demo_inputs = {"command": "echo 'Hello from demo'"}
+    elif executor_id == "rest_executor":
+        demo_inputs = {
+            "url": "https://jsonplaceholder.typicode.com/posts/1",
+            "method": "GET"
+        }
+    elif executor_id == "generate_executor":
+        demo_inputs = {
+            "requirement": "Get system information and display it"
+        }
+    elif executor_id == "docker_executor":
+        demo_inputs = {
+            "image": "alpine:latest",
+            "command": "echo 'Hello from Docker'"
+        }
+    elif executor_id == "ssh_executor":
+        demo_inputs = {
+            "host": "example.com",
+            "username": "demo_user",
+            "command": "echo 'Hello from SSH'",
+            "password": "demo_password"  # Demo only
+        }
+    elif executor_id == "mcp_executor":
+        demo_inputs = {
+            "transport": "stdio",
+            "command": ["python", "-m", "mcp_server"],
+            "operation": "list_tools"
+        }
+    elif executor_id == "websocket_executor":
+        demo_inputs = {
+            "url": "ws://echo.websocket.org",
+            "message": "Hello WebSocket"
+        }
+    elif executor_id == "grpc_executor":
+        demo_inputs = {
+            "server": "localhost:50051",
+            "service": "Greeter",
+            "method": "SayHello",
+            "request": {"name": "Demo"}
+        }
+    elif executor_id == "apflow_api_executor":
+        demo_inputs = {
+            "base_url": "http://localhost:8000",
+            "method": "tasks.get",
+            "params": {"task_id": "demo-task-123"}
+        }
+    elif executor_id == "aggregate_results_executor":
+        # For aggregate_results_executor, inputs will be populated by TaskManager
+        demo_inputs = {}
+    else:
+        # Fallback: use schema-based generation
+        demo_inputs = _generate_inputs_from_schema(input_schema)
+    
+    # Generate unique task ID
+    user_prefix = user_id[:8].replace("_", "-")
+    executor_id_safe = executor_id.replace("_", "-")
+    task_id = f"demo_executor_{user_prefix}_{executor_id_safe}_{base_timestamp}_{task_index}"
+    
+    # Create task name
+    task_name = f"Demo: {executor_name}"
+    
+    # Prepare task data
+    task_data = {
+        "id": task_id,
+        "name": task_name,
+        "user_id": user_id,
+        "schemas": {"method": executor_id},
+        "inputs": demo_inputs,
+        "status": "pending",
+        "parent_id": None,
+        "has_children": False,
+    }
+    
+    return [task_data], [task_id]
+
+
 class ExecutorDemoInitService:
     """Service for initializing demo tasks for all executors"""
 
@@ -151,35 +325,24 @@ class ExecutorDemoInitService:
             for task_index, (executor_id, metadata) in enumerate(all_metadata.items()):
                 try:
                     executor_name = metadata.get("name", executor_id)
-                    input_schema = metadata.get("input_schema", {})
                     
-                    # Generate demo inputs from input_schema
-                    demo_inputs = _generate_inputs_from_schema(input_schema)
+                    # Use specialized generator for each executor
+                    executor_tasks, executor_task_ids = _generate_demo_task_for_executor(
+                        executor_id=executor_id,
+                        executor_name=executor_name,
+                        metadata=metadata,
+                        user_id=user_id,
+                        base_timestamp=base_timestamp,
+                        task_index=task_index
+                    )
                     
-                    # Generate unique task ID
-                    user_prefix = user_id[:8].replace("_", "-")
-                    executor_id_safe = executor_id.replace("_", "-")
-                    task_id = f"demo_executor_{user_prefix}_{executor_id_safe}_{base_timestamp}_{task_index}"
-                    
-                    # Create task name
-                    task_name = f"Demo: {executor_name}"
-                    
-                    # Prepare task data as dictionary for bulk insert
-                    task_data = {
-                        "id": task_id,
-                        "name": task_name,
-                        "user_id": user_id,
-                        "schemas": {"method": executor_id},
-                        "inputs": demo_inputs,
-                        "status": "pending",
-                    }
-                    
-                    tasks_data.append(task_data)
-                    created_task_ids.append(task_id)
+                    tasks_data.extend(executor_tasks)
+                    created_task_ids.extend(executor_task_ids)
                     
                 except Exception as e:
                     logger.warning(
-                        f"Failed to prepare demo task for executor '{executor_id}': {e}"
+                        f"Failed to prepare demo task for executor '{executor_id}': {e}",
+                        exc_info=True
                     )
                     continue
             
@@ -221,23 +384,39 @@ class ExecutorDemoInitService:
                             inputs_json = json.dumps(task_data.get("inputs", {}))
                             schemas_json = json.dumps(task_data.get("schemas", {}))
                             
+                            # Extract task fields
+                            task_id = task_data.get("id")
+                            task_user_id = task_data.get("user_id")
+                            task_name = task_data.get("name")
+                            task_status = task_data.get("status", "pending")
+                            task_parent_id = task_data.get("parent_id")
+                            task_has_children = task_data.get("has_children", False)
+                            task_dependencies = task_data.get("dependencies")
+                            
+                            # Serialize dependencies JSON
+                            dependencies_json = json.dumps(task_dependencies) if task_dependencies else None
+                            
                             # Build INSERT statement with bound parameters
                             # Use CAST to avoid parameter placeholder conflicts with ::json syntax
+                            # Include parent_id, has_children, and dependencies for task tree support
                             sql = text(f"""
-                                INSERT INTO {table_name} (id, user_id, name, status, inputs, schemas, priority, progress, has_children, has_copy)
-                                VALUES (:id, :user_id, :name, :status, CAST(:inputs AS json), CAST(:schemas AS json), 2, 0.0, false, false)
+                                INSERT INTO {table_name} (id, user_id, name, status, inputs, schemas, priority, progress, has_children, has_copy, parent_id, dependencies)
+                                VALUES (:id, :user_id, :name, :status, CAST(:inputs AS json), CAST(:schemas AS json), 2, 0.0, :has_children, false, :parent_id, CAST(:dependencies AS json))
                             """)
                             
                             # Execute with parameters
                             await db_session.execute(
                                 sql,
                                 {
-                                    "id": task_data["id"],
-                                    "user_id": task_data["user_id"],
-                                    "name": task_data["name"],
-                                    "status": task_data["status"],
+                                    "id": task_id,
+                                    "user_id": task_user_id,
+                                    "name": task_name,
+                                    "status": task_status,
                                     "inputs": inputs_json,
                                     "schemas": schemas_json,
+                                    "has_children": task_has_children,
+                                    "parent_id": task_parent_id,
+                                    "dependencies": dependencies_json,
                                 }
                             )
                         except Exception as insert_error:
