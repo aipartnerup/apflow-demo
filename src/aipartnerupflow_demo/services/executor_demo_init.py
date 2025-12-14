@@ -136,6 +136,7 @@ def _generate_demo_task_for_system_info_executor(
             "status": "pending",
             "parent_id": None,  # Will be set after parent is created
             "has_children": False,
+            "dependencies": None,  # Child tasks have no dependencies
         }
         child_tasks.append(child_task)
         child_task_ids.append(child_task_id)
@@ -272,6 +273,7 @@ def _generate_demo_task_for_executor(
         "status": "pending",
         "parent_id": None,
         "has_children": False,
+        "dependencies": None,  # Explicitly set to None for non-aggregate tasks
     }
     
     return [task_data], [task_id]
@@ -378,7 +380,18 @@ class ExecutorDemoInitService:
                     # Insert each task individually using raw SQL
                     # Don't use explicit begin() as session may already be in a transaction
                     # SQLAlchemy will handle transaction management automatically
-                    for task_data in tasks_data:
+                    # IMPORTANT: Insert parent tasks before child tasks to satisfy foreign key constraints
+                    # Sort tasks: parent tasks (parent_id=None) first, then child tasks
+                    sorted_tasks = sorted(tasks_data, key=lambda t: (t.get("parent_id") is not None, t.get("id")))
+                    
+                    logger.info(
+                        f"Inserting {len(sorted_tasks)} tasks (sorted: parents first, then children). "
+                        f"Parent tasks: {sum(1 for t in sorted_tasks if t.get('parent_id') is None)}, "
+                        f"Child tasks: {sum(1 for t in sorted_tasks if t.get('parent_id') is not None)}"
+                    )
+                    
+                    inserted_count = 0
+                    for task_data in sorted_tasks:
                         try:
                             # Serialize JSON fields
                             inputs_json = json.dumps(task_data.get("inputs", {}))
@@ -396,18 +409,21 @@ class ExecutorDemoInitService:
                             # Serialize dependencies JSON
                             dependencies_json = json.dumps(task_dependencies) if task_dependencies else None
                             
+                            logger.debug(
+                                f"Inserting task: id={task_id}, parent_id={task_parent_id}, "
+                                f"has_children={task_has_children}, dependencies={len(task_dependencies) if task_dependencies else 0}"
+                            )
+                            
                             # Build INSERT statement with bound parameters
                             # Use CAST to avoid parameter placeholder conflicts with ::json syntax
                             # Include parent_id, has_children, and dependencies for task tree support
-                            sql = text(f"""
-                                INSERT INTO {table_name} (id, user_id, name, status, inputs, schemas, priority, progress, has_children, has_copy, parent_id, dependencies)
-                                VALUES (:id, :user_id, :name, :status, CAST(:inputs AS json), CAST(:schemas AS json), 2, 0.0, :has_children, false, :parent_id, CAST(:dependencies AS json))
-                            """)
-                            
-                            # Execute with parameters
-                            await db_session.execute(
-                                sql,
-                                {
+                            # Handle NULL dependencies properly
+                            if dependencies_json is not None:
+                                sql = text(f"""
+                                    INSERT INTO {table_name} (id, user_id, name, status, inputs, schemas, priority, progress, has_children, has_copy, parent_id, dependencies)
+                                    VALUES (:id, :user_id, :name, :status, CAST(:inputs AS json), CAST(:schemas AS json), 2, 0.0, :has_children, false, :parent_id, CAST(:dependencies AS json))
+                                """)
+                                params = {
                                     "id": task_id,
                                     "user_id": task_user_id,
                                     "name": task_name,
@@ -418,16 +434,49 @@ class ExecutorDemoInitService:
                                     "parent_id": task_parent_id,
                                     "dependencies": dependencies_json,
                                 }
-                            )
+                            else:
+                                sql = text(f"""
+                                    INSERT INTO {table_name} (id, user_id, name, status, inputs, schemas, priority, progress, has_children, has_copy, parent_id, dependencies)
+                                    VALUES (:id, :user_id, :name, :status, CAST(:inputs AS json), CAST(:schemas AS json), 2, 0.0, :has_children, false, :parent_id, NULL)
+                                """)
+                                params = {
+                                    "id": task_id,
+                                    "user_id": task_user_id,
+                                    "name": task_name,
+                                    "status": task_status,
+                                    "inputs": inputs_json,
+                                    "schemas": schemas_json,
+                                    "has_children": task_has_children,
+                                    "parent_id": task_parent_id,
+                                }
+                            
+                            # Execute with parameters
+                            result = await db_session.execute(sql, params)
+                            inserted_count += 1
+                            logger.debug(f"Successfully inserted task {inserted_count}/{len(sorted_tasks)}: {task_id}")
                         except Exception as insert_error:
-                            # Log error and remove from created_task_ids
-                            logger.warning(
-                                f"Failed to insert task {task_data.get('id', 'unknown')}: {insert_error}"
+                            # Log error with full details and remove from created_task_ids
+                            logger.error(
+                                f"Failed to insert task {task_data.get('id', 'unknown')}: {insert_error}",
+                                exc_info=True
+                            )
+                            logger.error(
+                                f"Task data that failed: id={task_data.get('id')}, "
+                                f"name={task_data.get('name')}, "
+                                f"parent_id={task_data.get('parent_id')}, "
+                                f"has_children={task_data.get('has_children')}, "
+                                f"dependencies={task_data.get('dependencies')}"
                             )
                             if task_data["id"] in created_task_ids:
                                 created_task_ids.remove(task_data["id"])
                             # Continue with next task
                             continue
+                    
+                    logger.info(f"Successfully inserted {inserted_count}/{len(sorted_tasks)} tasks before commit")
+                    
+                    if inserted_count == 0:
+                        logger.warning("No tasks were inserted, skipping commit")
+                        return []
                     
                     # Commit all inserts in a single transaction
                     # Use retry mechanism to handle concurrent operation conflicts
@@ -435,6 +484,7 @@ class ExecutorDemoInitService:
                     max_retries = 3
                     retry_delay = 0.2  # 200ms delay between retries
                     
+                    commit_successful = False
                     for attempt in range(max_retries):
                         try:
                             # Clear session state to avoid conflicts with previous operations
@@ -442,7 +492,10 @@ class ExecutorDemoInitService:
                             # Delay to let event loop process any pending operations from previous tests
                             await asyncio.sleep(retry_delay * (attempt + 1))
                             # Now commit
+                            logger.info(f"Committing transaction (attempt {attempt + 1}/{max_retries})...")
                             await db_session.commit()
+                            logger.info(f"Transaction committed successfully. Inserted {len(created_task_ids)} tasks.")
+                            commit_successful = True
                             # Success! Break out of retry loop
                             break
                         except Exception as commit_error:
@@ -475,6 +528,10 @@ class ExecutorDemoInitService:
                                     pass
                                 created_task_ids.clear()
                                 raise
+                    
+                    if not commit_successful:
+                        logger.error("Failed to commit transaction after all retries. No tasks were saved.")
+                        return []
                 else:
                     # For sync, use bulk_insert_mappings which is more efficient
                     db_session.bulk_insert_mappings(TaskModel, tasks_data)

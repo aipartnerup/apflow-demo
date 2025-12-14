@@ -23,9 +23,9 @@ class AuthRoutes:
         This endpoint triggers the SessionCookieMiddleware to generate and set the JWT token cookie.
         When called by webapp on startup:
         1. Request goes through SessionCookieMiddleware
-        2. Middleware checks for demo_jwt_token cookie
+        2. Middleware checks for authorization cookie
         3. If not present, generates user_id from browser fingerprint and creates JWT token
-        4. Sets demo_jwt_token cookie in response (httponly, 1 year expiration)
+        4. Sets authorization cookie in response (httponly, 1 year expiration)
         5. Returns confirmation that auto-login is enabled
         
         After this call, all subsequent API requests will automatically include the cookie,

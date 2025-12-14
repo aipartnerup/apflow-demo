@@ -105,7 +105,7 @@ def _create_custom_middleware() -> List:
     """
     middleware = []
     
-    # Session cookie middleware (runs first, sets demo_jwt_token cookie)
+    # Session cookie middleware (runs first, sets authorization cookie)
     # This enables browser fingerprinting + JWT token generation for user identification
     # Cookie: httponly=True, max_age=1 year, samesite=lax
     # JWT token is added to Authorization header for aipartnerupflow's JWT middleware

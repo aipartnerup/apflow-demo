@@ -76,7 +76,7 @@ def extract_user_id_from_request(request: Request) -> Optional[str]:
     Priority:
     1. JWT token (set by aipartnerupflow JWT middleware) - for authenticated users
        This is the preferred method as it integrates with aipartnerupflow's user_id extraction
-    2. JWT token from cookie (demo_jwt_token) - extract user_id from token
+    2. JWT token from cookie (authorization) - extract user_id from token
     3. Browser fingerprint - fallback for first-time visitors
     
     Args:
@@ -93,7 +93,7 @@ def extract_user_id_from_request(request: Request) -> Optional[str]:
     
     # Priority 2: Try to extract from JWT token in cookie
     # This handles the case where cookie exists but JWT middleware hasn't processed it yet
-    jwt_token = request.cookies.get("demo_jwt_token")
+    jwt_token = request.cookies.get("authorization")
     if jwt_token:
         from aipartnerupflow_demo.utils.jwt_utils import get_user_id_from_token
         user_id = get_user_id_from_token(jwt_token)
