@@ -9,7 +9,7 @@ import pytest
 import asyncio
 from typing import Dict, Any
 from aipartnerupflow_demo.services.executor_demo_init import ExecutorDemoInitService
-from aipartnerupflow.core.storage import get_default_session
+from aipartnerupflow.core.storage import create_pooled_session
 from aipartnerupflow.core.storage.sqlalchemy.task_repository import TaskRepository
 from aipartnerupflow.core.config import get_task_model_class
 from aipartnerupflow.core.extensions.executor_metadata import get_all_executor_metadata
@@ -33,48 +33,45 @@ async def test_task_data_structure_completeness(test_user_id):
         pytest.skip("No executors available to test")
     
     # Get task repository
-    db_session = get_default_session()
-    task_repository = TaskRepository(db_session, task_model_class=get_task_model_class())
-    all_metadata = get_all_executor_metadata()
-    
-    # Validate each task
-    for task_id in created_task_ids:
-        if task_repository.is_async:
+    async with create_pooled_session() as db_session:
+        task_repository = TaskRepository(db_session, task_model_class=get_task_model_class())
+        all_metadata = get_all_executor_metadata()
+        
+        # Validate each task
+        for task_id in created_task_ids:
             task = await task_repository.get_task_by_id(task_id)
-        else:
-            task = task_repository.get_task_by_id(task_id)
-        
-        assert task is not None, f"Task {task_id} should exist"
-        
-        # Check all critical fields exist and are not None
-        critical_fields = ['id', 'name', 'user_id', 'schemas', 'inputs', 'status']
-        for field in critical_fields:
-            assert hasattr(task, field), f"Task {task_id} missing field: {field}"
-            value = getattr(task, field)
-            assert value is not None, f"Task {task_id} field '{field}' is None"
-        
-        # Validate schemas structure
-        assert isinstance(task.schemas, dict), f"Task {task_id} schemas should be dict, got {type(task.schemas)}"
-        assert 'method' in task.schemas, f"Task {task_id} schemas missing 'method' key"
-        executor_id = task.schemas['method']
-        assert executor_id in all_metadata, f"Task {task_id} executor_id '{executor_id}' not in metadata"
-        
-        # Validate inputs structure
-        assert isinstance(task.inputs, dict), f"Task {task_id} inputs should be dict, got {type(task.inputs)}"
-        
-        # Validate executor metadata matches
-        executor_metadata = all_metadata[executor_id]
-        executor_name = executor_metadata.get('name', executor_id)
-        assert task.name == f"Demo: {executor_name}", \
-            f"Task {task_id} name mismatch: expected 'Demo: {executor_name}', got '{task.name}'"
-        
-        # Validate user_id
-        assert task.user_id == test_user_id, \
-            f"Task {task_id} user_id mismatch: expected '{test_user_id}', got '{task.user_id}'"
-        
-        # Validate status
-        assert task.status == "pending", \
-            f"Task {task_id} status should be 'pending', got '{task.status}'"
+            
+            assert task is not None, f"Task {task_id} should exist"
+            
+            # Check all critical fields exist and are not None
+            critical_fields = ['id', 'name', 'user_id', 'schemas', 'inputs', 'status']
+            for field in critical_fields:
+                assert hasattr(task, field), f"Task {task_id} missing field: {field}"
+                value = getattr(task, field)
+                assert value is not None, f"Task {task_id} field '{field}' is None"
+            
+            # Validate schemas structure
+            assert isinstance(task.schemas, dict), f"Task {task_id} schemas should be dict, got {type(task.schemas)}"
+            assert 'method' in task.schemas, f"Task {task_id} schemas missing 'method' key"
+            executor_id = task.schemas['method']
+            assert executor_id in all_metadata, f"Task {task_id} executor_id '{executor_id}' not in metadata"
+            
+            # Validate inputs structure
+            assert isinstance(task.inputs, dict), f"Task {task_id} inputs should be dict, got {type(task.inputs)}"
+            
+            # Validate executor metadata matches
+            executor_metadata = all_metadata[executor_id]
+            executor_name = executor_metadata.get('name', executor_id)
+            assert task.name == f"Demo: {executor_name}", \
+                f"Task {task_id} name mismatch: expected 'Demo: {executor_name}', got '{task.name}'"
+            
+            # Validate user_id
+            assert task.user_id == test_user_id, \
+                f"Task {task_id} user_id mismatch: expected '{test_user_id}', got '{task.user_id}'"
+            
+            # Validate status
+            assert task.status == "pending", \
+                f"Task {task_id} status should be 'pending', got '{task.status}'"
 
 
 @pytest.mark.asyncio
@@ -89,68 +86,65 @@ async def test_task_inputs_validation(test_user_id):
         pytest.skip("No executors available to test")
     
     # Get task repository
-    db_session = get_default_session()
-    task_repository = TaskRepository(db_session, task_model_class=get_task_model_class())
-    all_metadata = get_all_executor_metadata()
-    
-    # Validate inputs for each task
-    for task_id in created_task_ids:
-        if task_repository.is_async:
+    async with create_pooled_session() as db_session:
+        task_repository = TaskRepository(db_session, task_model_class=get_task_model_class())
+        all_metadata = get_all_executor_metadata()
+        
+        # Validate inputs for each task
+        for task_id in created_task_ids:
             task = await task_repository.get_task_by_id(task_id)
-        else:
-            task = task_repository.get_task_by_id(task_id)
-        
-        assert task is not None
-        executor_id = task.schemas['method']
-        executor_metadata = all_metadata.get(executor_id)
-        
-        if not executor_metadata:
-            pytest.fail(f"Executor metadata not found for {executor_id}")
-        
-        input_schema = executor_metadata.get('input_schema', {})
-        if not input_schema:
-            # If no input schema, inputs should be empty dict
-            assert task.inputs == {}, \
-                f"Task {task_id} has inputs but executor has no input_schema: {task.inputs}"
-            continue
-        
-        properties = input_schema.get('properties', {})
-        required = input_schema.get('required', [])
-        
-        # Check required fields are present
-        missing_required = [field for field in required if field not in task.inputs]
-        assert len(missing_required) == 0, \
-            f"Task {task_id} missing required input fields: {missing_required}"
-        
-        # Check all input keys are valid schema fields
-        invalid_keys = [key for key in task.inputs.keys() if key not in properties and key not in required]
-        assert len(invalid_keys) == 0, \
-            f"Task {task_id} has invalid input keys not in schema: {invalid_keys}"
-        
-        # Validate input value types match schema
-        for input_key, input_value in task.inputs.items():
-            if input_key in properties:
-                property_schema = properties[input_key]
-                expected_type = property_schema.get('type')
-                
-                if expected_type == 'string':
-                    assert isinstance(input_value, str), \
-                        f"Task {task_id} input '{input_key}' should be string, got {type(input_value)}"
-                elif expected_type == 'integer':
-                    assert isinstance(input_value, int), \
-                        f"Task {task_id} input '{input_key}' should be integer, got {type(input_value)}"
-                elif expected_type == 'number':
-                    assert isinstance(input_value, (int, float)), \
-                        f"Task {task_id} input '{input_key}' should be number, got {type(input_value)}"
-                elif expected_type == 'boolean':
-                    assert isinstance(input_value, bool), \
-                        f"Task {task_id} input '{input_key}' should be boolean, got {type(input_value)}"
-                elif expected_type == 'array':
-                    assert isinstance(input_value, list), \
-                        f"Task {task_id} input '{input_key}' should be array, got {type(input_value)}"
-                elif expected_type == 'object':
-                    assert isinstance(input_value, dict), \
-                        f"Task {task_id} input '{input_key}' should be object, got {type(input_value)}"
+            
+            assert task is not None
+            executor_id = task.schemas['method']
+            executor_metadata = all_metadata.get(executor_id)
+            
+            if not executor_metadata:
+                pytest.fail(f"Executor metadata not found for {executor_id}")
+            
+            input_schema = executor_metadata.get('input_schema', {})
+            if not input_schema:
+                # If no input schema, inputs should be empty dict
+                assert task.inputs == {}, \
+                    f"Task {task_id} has inputs but executor has no input_schema: {task.inputs}"
+                continue
+            
+            properties = input_schema.get('properties', {})
+            required = input_schema.get('required', [])
+            
+            # Check required fields are present
+            missing_required = [field for field in required if field not in task.inputs]
+            assert len(missing_required) == 0, \
+                f"Task {task_id} missing required input fields: {missing_required}"
+            
+            # Check all input keys are valid schema fields
+            invalid_keys = [key for key in task.inputs.keys() if key not in properties and key not in required]
+            assert len(invalid_keys) == 0, \
+                f"Task {task_id} has invalid input keys not in schema: {invalid_keys}"
+            
+            # Validate input value types match schema
+            for input_key, input_value in task.inputs.items():
+                if input_key in properties:
+                    property_schema = properties[input_key]
+                    expected_type = property_schema.get('type')
+                    
+                    if expected_type == 'string':
+                        assert isinstance(input_value, str), \
+                            f"Task {task_id} input '{input_key}' should be string, got {type(input_value)}"
+                    elif expected_type == 'integer':
+                        assert isinstance(input_value, int), \
+                            f"Task {task_id} input '{input_key}' should be integer, got {type(input_value)}"
+                    elif expected_type == 'number':
+                        assert isinstance(input_value, (int, float)), \
+                            f"Task {task_id} input '{input_key}' should be number, got {type(input_value)}"
+                    elif expected_type == 'boolean':
+                        assert isinstance(input_value, bool), \
+                            f"Task {task_id} input '{input_key}' should be boolean, got {type(input_value)}"
+                    elif expected_type == 'array':
+                        assert isinstance(input_value, list), \
+                            f"Task {task_id} input '{input_key}' should be array, got {type(input_value)}"
+                    elif expected_type == 'object':
+                        assert isinstance(input_value, dict), \
+                            f"Task {task_id} input '{input_key}' should be object, got {type(input_value)}"
 
 
 @pytest.mark.asyncio
@@ -239,23 +233,20 @@ async def test_all_executors_have_demo_tasks(test_user_id):
         f"Expected {len(all_metadata)} tasks, got {len(created_task_ids)}"
     
     # Get task repository
-    db_session = get_default_session()
-    task_repository = TaskRepository(db_session, task_model_class=get_task_model_class())
-    
-    # Check each executor has a corresponding task
-    executor_ids_in_tasks = set()
-    for task_id in created_task_ids:
-        if task_repository.is_async:
-            task = await task_repository.get_task_by_id(task_id)
-        else:
-            task = task_repository.get_task_by_id(task_id)
+    async with create_pooled_session() as db_session:
+        task_repository = TaskRepository(db_session, task_model_class=get_task_model_class())
         
-        assert task is not None
-        executor_id = task.schemas['method']
-        executor_ids_in_tasks.add(executor_id)
-    
-    # Check all executors are represented
-    missing_executors = set(all_metadata.keys()) - executor_ids_in_tasks
-    assert len(missing_executors) == 0, \
-        f"Missing demo tasks for executors: {missing_executors}"
+        # Check each executor has a corresponding task
+        executor_ids_in_tasks = set()
+        for task_id in created_task_ids:
+            task = await task_repository.get_task_by_id(task_id)
+            
+            assert task is not None
+            executor_id = task.schemas['method']
+            executor_ids_in_tasks.add(executor_id)
+        
+        # Check all executors are represented
+        missing_executors = set(all_metadata.keys()) - executor_ids_in_tasks
+        assert len(missing_executors) == 0, \
+            f"Missing demo tasks for executors: {missing_executors}"
 

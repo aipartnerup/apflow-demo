@@ -87,7 +87,7 @@ class QuotaTaskRoutes(TaskRoutes):
             is_llm_consuming = True
             
             # Check quota
-            allowed, quota_info = RateLimiter.check_task_tree_quota(
+            allowed, quota_info = await RateLimiter.check_task_tree_quota(
                 user_id=user_id,
                 is_llm_consuming=is_llm_consuming,
                 has_llm_key=is_premium,
@@ -160,7 +160,7 @@ class QuotaTaskRoutes(TaskRoutes):
             root_task_id = result_dict.get("root_task_id")
             if root_task_id:
                 # Start tracking for saved task trees
-                RateLimiter.start_task_tree(
+                await RateLimiter.start_task_tree(
                     user_id=user_id,
                     task_tree_id=root_task_id,
                     is_llm_consuming=is_llm_consuming,
@@ -208,21 +208,22 @@ class QuotaTaskRoutes(TaskRoutes):
                 is_llm_consuming = detect_task_tree_from_tasks_array(tasks)
             elif task_id:
                 # Need to check task from database
-                from aipartnerupflow.core.storage import get_default_session
+                # Need to check task from database
+                from aipartnerupflow.core.storage import create_pooled_session
                 from aipartnerupflow.core.storage.sqlalchemy.task_repository import TaskRepository
                 from aipartnerupflow.core.config import get_task_model_class
                 
-                db_session = get_default_session()
-                task_repository = TaskRepository(db_session, task_model_class=get_task_model_class())
-                task = await task_repository.get_task_by_id(task_id)
-                if task:
-                    from aipartnerupflow_demo.utils.task_detection import is_llm_consuming_task
-                    is_llm_consuming = is_llm_consuming_task(task)
+                async with create_pooled_session() as db_session:
+                    task_repository = TaskRepository(db_session, task_model_class=get_task_model_class())
+                    task = await task_repository.get_task_by_id(task_id)
+                    if task:
+                        from aipartnerupflow_demo.utils.task_detection import is_llm_consuming_task
+                        is_llm_consuming = is_llm_consuming_task(task)
             
             # Check quota (only for new task trees, not re-execution)
             # For execute, we check if this is a new task tree creation
             if tasks or (task_id and not await self._is_existing_task_tree(task_id)):
-                allowed, quota_info = RateLimiter.check_task_tree_quota(
+                allowed, quota_info = await RateLimiter.check_task_tree_quota(
                     user_id=user_id,
                     is_llm_consuming=is_llm_consuming,
                     has_llm_key=is_premium,
@@ -254,7 +255,7 @@ class QuotaTaskRoutes(TaskRoutes):
                             # Continue with execution - executor hooks will handle demo mode
             
             # Check concurrency limit
-            concurrency_allowed, concurrency_info = RateLimiter.check_concurrency_limit(user_id)
+            concurrency_allowed, concurrency_info = await RateLimiter.check_concurrency_limit(user_id)
             if not concurrency_allowed:
                 return JSONResponse(
                     status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -300,7 +301,7 @@ class QuotaTaskRoutes(TaskRoutes):
             root_task_id = result_dict.get("root_task_id") or task_id
             if root_task_id and (tasks or not await self._is_existing_task_tree(root_task_id)):
                 # Start tracking for new task trees
-                RateLimiter.start_task_tree(
+                await RateLimiter.start_task_tree(
                     user_id=user_id,
                     task_tree_id=root_task_id,
                     is_llm_consuming=is_llm_consuming,
@@ -323,14 +324,14 @@ class QuotaTaskRoutes(TaskRoutes):
     async def _is_existing_task_tree(self, task_id: str) -> bool:
         """Check if task tree already exists in database"""
         try:
-            from aipartnerupflow.core.storage import get_default_session
+            from aipartnerupflow.core.storage import create_pooled_session
             from aipartnerupflow.core.storage.sqlalchemy.task_repository import TaskRepository
             from aipartnerupflow.core.config import get_task_model_class
             
-            db_session = get_default_session()
-            task_repository = TaskRepository(db_session, task_model_class=get_task_model_class())
-            task = await task_repository.get_task_by_id(task_id)
-            return task is not None
+            async with create_pooled_session() as db_session:
+                task_repository = TaskRepository(db_session, task_model_class=get_task_model_class())
+                task = await task_repository.get_task_by_id(task_id)
+                return task is not None
         except Exception:
             return False
     

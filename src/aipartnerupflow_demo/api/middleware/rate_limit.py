@@ -40,7 +40,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             ip_address = forwarded_for.split(",")[0].strip()
         
         # Check rate limit
-        allowed, info = RateLimiter.check_limit(
+        allowed, info = await RateLimiter.check_limit(
             user_id=user_id,
             ip_address=ip_address,
         )
@@ -68,7 +68,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         
         # Increment counter after successful request
         if response.status_code < 400:
-            RateLimiter.increment(
+            await RateLimiter.record_request(
                 user_id=user_id,
                 ip_address=ip_address,
             )

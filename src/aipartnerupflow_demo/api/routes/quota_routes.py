@@ -36,7 +36,7 @@ class QuotaRoutes:
             user_id = extract_user_id_from_request(request)
             is_premium = has_llm_key_in_header(request)
             
-            quota_status = RateLimiter.get_user_quota_status(
+            quota_status = await RateLimiter.get_user_quota_status(
                 user_id=user_id,
                 has_llm_key=is_premium,
             )
@@ -75,13 +75,14 @@ class QuotaRoutes:
             # In production, consider adding authentication/authorization checks here.
             
             # Get global concurrency from database
-            from aipartnerupflow.core.storage import get_default_session
+            # Get global concurrency from database
+            from aipartnerupflow.core.storage import create_pooled_session
             from aipartnerupflow_demo.storage.quota_repository import QuotaRepository
             
             try:
-                session = get_default_session()
-                repo = QuotaRepository(session)
-                total_concurrent = repo.get_concurrency_count("system", "global")
+                async with create_pooled_session() as session:
+                    repo = QuotaRepository(session)
+                    total_concurrent = repo.get_concurrency_count("system", "global")
             except Exception as e:
                 logger.warning(f"Failed to get concurrency from database: {e}")
                 total_concurrent = 0
