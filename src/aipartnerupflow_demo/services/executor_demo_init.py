@@ -131,7 +131,11 @@ def _generate_demo_task_for_system_info_executor(
             "id": child_task_id,
             "name": f"Demo: {executor_name} - {resource.upper()}",
             "user_id": user_id,
-            "schemas": {"method": executor_id},
+            "schemas": {
+                "method": executor_id,
+                "demo_runnable": True,
+                "demo_requirements": None
+            },
             "inputs": {"resource": resource},
             "status": "pending",
             "parent_id": None,  # Will be set after parent is created
@@ -150,7 +154,10 @@ def _generate_demo_task_for_system_info_executor(
         "name": f"Demo: {executor_name} (Aggregate)",
         "user_id": user_id,
         "schemas": {"method": "aggregate_results_executor"},
-        "inputs": {},  # Will be populated with dependency results by TaskManager
+        "inputs": {
+            "_demo_runnable": True,
+            "_demo_requirements": None
+        },  # Will be populated with dependency results by TaskManager
         "status": "pending",
         "parent_id": None,
         "has_children": True,
@@ -199,24 +206,32 @@ def _generate_demo_task_for_executor(
     # For other executors, generate inputs based on their specific requirements
     input_schema = metadata.get("input_schema", {})
     demo_inputs = {}
+    demo_runnable = True
+    demo_requirements = None
     
-    # Generate inputs based on executor-specific logic
+    # Generate inputs and demo metadata based on executor-specific logic
     if executor_id == "command_executor":
         demo_inputs = {"command": "echo 'Hello from demo'"}
+        demo_runnable = True
+        demo_requirements = "Set AIPARTNERUPFLOW_STDIO_ALLOW_COMMAND=1 to enable command execution"
     elif executor_id == "rest_executor":
         demo_inputs = {
             "url": "https://jsonplaceholder.typicode.com/posts/1",
             "method": "GET"
         }
+        demo_runnable = True
+        demo_requirements = None
     elif executor_id == "generate_executor":
-        demo_inputs = {
-            "requirement": "Get system information and display it"
-        }
+        demo_inputs = {"requirement": "Get system information and display it"}
+        demo_runnable = False
+        demo_requirements = "Requires OPENAI_API_KEY environment variable"
     elif executor_id == "docker_executor":
         demo_inputs = {
             "image": "alpine:latest",
             "command": "echo 'Hello from Docker'"
         }
+        demo_runnable = False
+        demo_requirements = "Requires Docker daemon to be running"
     elif executor_id == "ssh_executor":
         demo_inputs = {
             "host": "example.com",
@@ -224,17 +239,23 @@ def _generate_demo_task_for_executor(
             "command": "echo 'Hello from SSH'",
             "password": "demo_password"  # Demo only
         }
+        demo_runnable = False
+        demo_requirements = "Requires SSH server access (host, username, password/key)"
     elif executor_id == "mcp_executor":
         demo_inputs = {
             "transport": "stdio",
             "command": ["python", "-m", "mcp_server"],
             "operation": "list_tools"
         }
+        demo_runnable = False
+        demo_requirements = "Requires MCP server to be running"
     elif executor_id == "websocket_executor":
         demo_inputs = {
             "url": "ws://echo.websocket.org",
             "message": "Hello WebSocket"
         }
+        demo_runnable = False
+        demo_requirements = "WebSocket server may not be available"
     elif executor_id == "grpc_executor":
         demo_inputs = {
             "server": "localhost:50051",
@@ -242,18 +263,26 @@ def _generate_demo_task_for_executor(
             "method": "SayHello",
             "request": {"name": "Demo"}
         }
+        demo_runnable = False
+        demo_requirements = "Requires gRPC server running on localhost:50051"
     elif executor_id == "apflow_api_executor":
         demo_inputs = {
             "base_url": "http://localhost:8000",
             "method": "tasks.get",
             "params": {"task_id": "demo-task-123"}
         }
+        demo_runnable = False
+        demo_requirements = "Requires running aipartnerupflow API instance"
     elif executor_id == "aggregate_results_executor":
         # For aggregate_results_executor, inputs will be populated by TaskManager
         demo_inputs = {}
+        demo_runnable = True
+        demo_requirements = None
     else:
         # Fallback: use schema-based generation
         demo_inputs = _generate_inputs_from_schema(input_schema)
+        demo_runnable = True
+        demo_requirements = None
     
     # Generate unique task ID
     user_prefix = user_id[:8].replace("_", "-")
@@ -263,12 +292,16 @@ def _generate_demo_task_for_executor(
     # Create task name
     task_name = f"Demo: {executor_name}"
     
-    # Prepare task data
+    # Prepare task data with demo metadata in schemas
     task_data = {
         "id": task_id,
         "name": task_name,
         "user_id": user_id,
-        "schemas": {"method": executor_id},
+        "schemas": {
+            "method": executor_id,
+            "demo_runnable": demo_runnable,
+            "demo_requirements": demo_requirements
+        },
         "inputs": demo_inputs,
         "status": "pending",
         "parent_id": None,

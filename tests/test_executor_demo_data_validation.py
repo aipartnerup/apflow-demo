@@ -135,7 +135,11 @@ async def test_task_inputs_validation(test_user_id):
                 f"Task {task_id} missing required input fields: {missing_required}"
             
             # Check all input keys are valid schema fields
-            invalid_keys = [key for key in task.inputs.keys() if key not in properties and key not in required]
+            # Exclude _demo_* fields as they are internal demo metadata, not executor inputs
+            invalid_keys = [
+                key for key in task.inputs.keys() 
+                if key not in properties and key not in required and not key.startswith('_demo_')
+            ]
             assert len(invalid_keys) == 0, \
                 f"Task {task_id} has invalid input keys not in schema: {invalid_keys}"
             

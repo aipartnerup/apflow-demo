@@ -235,7 +235,10 @@ async def test_task_inputs_match_executor_schema(test_user_id, cleanup_tasks):
                         f"Task {task_id} missing required input field '{required_field}'"
                 
                 # Check that inputs only contain valid schema fields
+                # Exclude _demo_* fields as they are internal demo metadata
                 for input_key in task.inputs.keys():
+                    if input_key.startswith('_demo_'):
+                        continue  # Skip demo metadata fields
                     assert input_key in properties or input_key in required, \
                         f"Task {task_id} has input field '{input_key}' not in schema"
 
