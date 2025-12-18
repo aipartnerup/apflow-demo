@@ -13,12 +13,14 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 from fastapi import HTTPException, status
 import json
+import os
 
 from aipartnerupflow.api.routes.tasks import TaskRoutes
 from aipartnerupflow_demo.extensions.rate_limiter import RateLimiter
 from aipartnerupflow_demo.utils.header_utils import (
     has_llm_key_in_header,
     extract_user_id_from_request,
+    extract_llm_key_from_header,
 )
 from aipartnerupflow_demo.utils.task_detection import (
     detect_task_tree_from_tasks_array,
@@ -120,7 +122,7 @@ class QuotaTaskRoutes(TaskRoutes):
                     # Continue with execution, aipartnerupflow will return demo data
             
             # Check concurrency limit
-            concurrency_allowed, concurrency_info = RateLimiter.check_concurrency_limit(user_id)
+            concurrency_allowed, concurrency_info = await RateLimiter.check_concurrency_limit(user_id)
             if not concurrency_allowed:
                 return JSONResponse(
                     status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -146,9 +148,54 @@ class QuotaTaskRoutes(TaskRoutes):
             params["metadata"]["user_id"] = user_id
             params["metadata"]["has_llm_key"] = is_premium
             
-            # Call parent implementation (returns dict, not JSONResponse)
-            # Note: aipartnerupflow v0.6.0 automatically extracts user_id from JWT and sets it on task
-            result_dict = await super().handle_task_generate(params, request, str(request_id) if request_id else "generate")
+            # Extract LLM API key from header and temporarily set it as environment variable
+            # Note: While handle_task_generate() supports X-LLM-API-KEY header via LLMAPIKeyMiddleware,
+            # executors (like GenerateExecutor) still need API key from environment variables when executing tasks.
+            # This is because executors run in a different context and cannot access request context.
+            llm_key_raw = extract_llm_key_from_header(request)
+            original_openai_key = os.environ.get("OPENAI_API_KEY")
+            original_anthropic_key = os.environ.get("ANTHROPIC_API_KEY")
+            
+            try:
+                # Temporarily set environment variable if LLM key is in header
+                if llm_key_raw:
+                    # Handle prefixed format: "openai:sk-..." or "anthropic:sk-ant-..."
+                    # Also handle direct key format: "sk-..." or "sk-ant-..."
+                    llm_key = llm_key_raw
+                    is_anthropic = False
+                    
+                    if ":" in llm_key:
+                        # Prefixed format: "openai:sk-..." or "anthropic:sk-ant-..."
+                        prefix, key = llm_key.split(":", 1)
+                        llm_key = key.strip()
+                        is_anthropic = prefix.lower() == "anthropic"
+                    else:
+                        # Direct key format: detect from key prefix
+                        # OpenAI keys typically start with "sk-", Anthropic keys start with "sk-ant-"
+                        is_anthropic = llm_key.startswith("sk-ant-")
+                    
+                    if is_anthropic:
+                        os.environ["ANTHROPIC_API_KEY"] = llm_key
+                    else:
+                        # Default to OpenAI format
+                        os.environ["OPENAI_API_KEY"] = llm_key
+                
+                # Call parent implementation (returns dict, not JSONResponse)
+                # Note: handle_task_generate() supports X-LLM-API-KEY header, but executors need env vars
+                result_dict = await super().handle_task_generate(params, request, str(request_id) if request_id else "generate")
+            finally:
+                # Restore original environment variables
+                if original_openai_key is not None:
+                    os.environ["OPENAI_API_KEY"] = original_openai_key
+                elif "OPENAI_API_KEY" in os.environ and llm_key_raw:
+                    # Remove the temporary key if it wasn't there originally
+                    del os.environ["OPENAI_API_KEY"]
+                
+                if original_anthropic_key is not None:
+                    os.environ["ANTHROPIC_API_KEY"] = original_anthropic_key
+                elif "ANTHROPIC_API_KEY" in os.environ and llm_key_raw:
+                    # Remove the temporary key if it wasn't there originally
+                    del os.environ["ANTHROPIC_API_KEY"]
             
             # Detect if actually LLM-consuming from generated tasks
             generated_tasks = result_dict.get("tasks", [])
@@ -277,10 +324,51 @@ class QuotaTaskRoutes(TaskRoutes):
             params["metadata"]["user_id"] = user_id
             params["metadata"]["has_llm_key"] = is_premium
             
-            # Call parent implementation (may return JSONResponse or StreamingResponse)
-            # Note: aipartnerupflow v0.6.0 automatically extracts user_id from JWT and sets it on task
-            # If use_demo=True is set, executor hooks will use built-in demo mode
-            result = await super().handle_task_execute(params, request, str(request_id) if request_id else "execute", request_id)
+            # Extract LLM API key from header and temporarily set it as environment variable
+            # Note: Same reason as in _handle_task_generate_with_quota - executors need env vars
+            llm_key_raw = extract_llm_key_from_header(request)
+            original_openai_key = os.environ.get("OPENAI_API_KEY")
+            original_anthropic_key = os.environ.get("ANTHROPIC_API_KEY")
+            
+            try:
+                # Temporarily set environment variable if LLM key is in header
+                if llm_key_raw:
+                    # Handle prefixed format: "openai:sk-..." or "anthropic:sk-ant-..."
+                    # Also handle direct key format: "sk-..." or "sk-ant-..."
+                    llm_key = llm_key_raw
+                    is_anthropic = False
+                    
+                    if ":" in llm_key:
+                        # Prefixed format: "openai:sk-..." or "anthropic:sk-ant-..."
+                        prefix, key = llm_key.split(":", 1)
+                        llm_key = key.strip()
+                        is_anthropic = prefix.lower() == "anthropic"
+                    else:
+                        # Direct key format: detect from key prefix
+                        # OpenAI keys typically start with "sk-", Anthropic keys start with "sk-ant-"
+                        is_anthropic = llm_key.startswith("sk-ant-")
+                    
+                    if is_anthropic:
+                        os.environ["ANTHROPIC_API_KEY"] = llm_key
+                    else:
+                        # Default to OpenAI format
+                        os.environ["OPENAI_API_KEY"] = llm_key
+                
+                # Call parent implementation (may return JSONResponse or StreamingResponse)
+                result = await super().handle_task_execute(params, request, str(request_id) if request_id else "execute", request_id)
+            finally:
+                # Restore original environment variables
+                if original_openai_key is not None:
+                    os.environ["OPENAI_API_KEY"] = original_openai_key
+                elif "OPENAI_API_KEY" in os.environ and llm_key_raw:
+                    # Remove the temporary key if it wasn't there originally
+                    del os.environ["OPENAI_API_KEY"]
+                
+                if original_anthropic_key is not None:
+                    os.environ["ANTHROPIC_API_KEY"] = original_anthropic_key
+                elif "ANTHROPIC_API_KEY" in os.environ and llm_key_raw:
+                    # Remove the temporary key if it wasn't there originally
+                    del os.environ["ANTHROPIC_API_KEY"]
             
             # Handle StreamingResponse (SSE mode) - return as-is
             from starlette.responses import StreamingResponse

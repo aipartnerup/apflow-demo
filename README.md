@@ -10,6 +10,7 @@ This is an independent application that wraps `aipartnerupflow` (v0.6.0+) as a c
 - **Demo-specific API middleware**: Quota checking and demo data injection
 - **Usage tracking**: Task execution and quota usage statistics
 - **Concurrency control**: System-wide and per-user concurrent task tree limits
+- **LLM API Key Support**: Supports `X-LLM-API-KEY` header with prefixed format (`openai:sk-...` or `anthropic:sk-ant-...`) or direct format (`sk-...`)
 - **Executor Metadata API**: Query executor metadata and schemas using aipartnerupflow's executor_metadata utilities
 - **Executor Demo Tasks**: Automatically generate demo tasks for all executors based on executor_metadata
 
@@ -109,6 +110,9 @@ curl -X POST http://localhost:8000/tasks \
 ```bash
 # Provide LLM API key in header
 # All 10 task trees can be LLM-consuming
+# Supported formats:
+#   - Prefixed: "openai:sk-xxx..." or "anthropic:sk-ant-xxx..."
+#   - Direct: "sk-xxx..." (auto-detected as OpenAI) or "sk-ant-xxx..." (auto-detected as Anthropic)
 curl -X POST http://localhost:8000/tasks \
   -H "Content-Type: application/json" \
   -H "X-LLM-API-KEY: openai:sk-xxx..." \
