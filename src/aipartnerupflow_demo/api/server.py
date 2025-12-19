@@ -14,7 +14,7 @@ from aipartnerupflow.api.main import create_runnable_app
 from aipartnerupflow_demo.api.middleware.rate_limit import RateLimitMiddleware
 from aipartnerupflow_demo.api.middleware.demo_mode import DemoModeMiddleware
 from aipartnerupflow_demo.api.middleware.session_cookie import SessionCookieMiddleware
-from aipartnerupflow_demo.api.routes.quota_task_routes import QuotaTaskRoutes
+from aipartnerupflow_demo.api.middleware.quota_limit import QuotaLimitMiddleware
 from aipartnerupflow_demo.utils.jwt_utils import verify_demo_jwt_token
 from aipartnerupflow_demo.config.settings import settings
 from aipartnerupflow.core.utils.logger import get_logger
@@ -115,7 +115,11 @@ def _create_custom_middleware() -> List:
     if settings.demo_mode:
         middleware.append(DemoModeMiddleware)
     
-    # Rate limiting middleware (runs after demo mode)
+    # Quota limit middleware (runs after demo mode, checks task tree quotas)
+    if settings.rate_limit_enabled:
+        middleware.append(QuotaLimitMiddleware)
+    
+    # Rate limiting middleware (runs after quota limit, general rate limiting)
     if settings.rate_limit_enabled:
         middleware.append(RateLimitMiddleware)
     
@@ -153,7 +157,7 @@ def create_demo_app() -> Any:
     app = create_runnable_app(
         protocol="a2a",
         verify_token_func=verify_demo_jwt_token,  # Demo JWT verification for cookie-based tokens
-        task_routes_class=QuotaTaskRoutes,  # Quota-aware TaskRoutes
+        # No custom task_routes_class - quota logic is handled by QuotaLimitMiddleware
         custom_routes=_create_custom_routes(),  # Custom routes
         custom_middleware=_create_custom_middleware(),  # Custom middleware
         auto_initialize_extensions=True,  # Automatically initialize extensions

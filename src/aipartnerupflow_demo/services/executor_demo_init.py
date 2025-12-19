@@ -10,7 +10,7 @@ from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime, timezone
 import asyncio
 from aipartnerupflow.core.extensions.executor_metadata import get_all_executor_metadata
-from aipartnerupflow.core.storage import get_default_session, create_session
+from aipartnerupflow.core.storage import create_pooled_session
 from aipartnerupflow.core.storage.sqlalchemy.task_repository import TaskRepository
 from aipartnerupflow.core.config import get_task_model_class
 from aipartnerupflow.core.utils.logger import get_logger
@@ -346,14 +346,8 @@ class ExecutorDemoInitService:
             base_timestamp = int(datetime.now(timezone.utc).timestamp() * 1000)
             TaskModel = get_task_model_class()
             
-            # Use default session but ensure it's in a clean state
-            # For batch operations, we'll use add_all and commit to avoid conflicts
-            db_session = get_default_session()
-            task_repository = TaskRepository(db_session, task_model_class=TaskModel)
-            is_async = task_repository.is_async
-            
             # Prepare all task data as dictionaries (no database operations)
-            # Using dictionaries allows us to use bulk_insert_mappings which bypasses ORM flush
+            # Tasks will be created using TaskModel instances and session.add()
             tasks_data = []
             created_task_ids = []
             
@@ -384,210 +378,107 @@ class ExecutorDemoInitService:
             if not tasks_data:
                 return []
             
-            # Use raw SQL text to bypass ORM completely and avoid connection conflicts
-            # Insert tasks one by one using raw SQL to avoid asyncpg concurrency issues
-            try:
-                from sqlalchemy import text
-                import json
-                
-                if is_async:
-                    # For async, insert tasks one by one using raw SQL text
-                    # This avoids ORM flush and transaction conflicts
-                    if not tasks_data:
-                        return []
-                    
-                    # Ensure session is clean before starting
-                    # Clear any pending operations and expire all objects
-                    try:
-                        db_session.expire_all()
-                        # Small delay to let event loop process any pending operations
-                        import asyncio
-                        await asyncio.sleep(0)
-                    except Exception:
-                        # Ignore errors during cleanup
-                        pass
-                    
-                    # Get table name from model
-                    table_name = TaskModel.__table__.name
-                    
-                    # Insert each task individually using raw SQL
-                    # Don't use explicit begin() as session may already be in a transaction
-                    # SQLAlchemy will handle transaction management automatically
-                    # IMPORTANT: Insert parent tasks before child tasks to satisfy foreign key constraints
-                    # Sort tasks: parent tasks (parent_id=None) first, then child tasks
-                    sorted_tasks = sorted(tasks_data, key=lambda t: (t.get("parent_id") is not None, t.get("id")))
-                    
-                    logger.info(
-                        f"Inserting {len(sorted_tasks)} tasks (sorted: parents first, then children). "
-                        f"Parent tasks: {sum(1 for t in sorted_tasks if t.get('parent_id') is None)}, "
-                        f"Child tasks: {sum(1 for t in sorted_tasks if t.get('parent_id') is not None)}"
-                    )
-                    
-                    inserted_count = 0
-                    for task_data in sorted_tasks:
-                        try:
-                            # Serialize JSON fields
-                            inputs_json = json.dumps(task_data.get("inputs", {}))
-                            schemas_json = json.dumps(task_data.get("schemas", {}))
-                            
-                            # Extract task fields
-                            task_id = task_data.get("id")
-                            task_user_id = task_data.get("user_id")
-                            task_name = task_data.get("name")
-                            task_status = task_data.get("status", "pending")
-                            task_parent_id = task_data.get("parent_id")
-                            task_has_children = task_data.get("has_children", False)
-                            task_dependencies = task_data.get("dependencies")
-                            
-                            # Serialize dependencies JSON
-                            dependencies_json = json.dumps(task_dependencies) if task_dependencies else None
-                            
-                            logger.debug(
-                                f"Inserting task: id={task_id}, parent_id={task_parent_id}, "
-                                f"has_children={task_has_children}, dependencies={len(task_dependencies) if task_dependencies else 0}"
-                            )
-                            
-                            # Build INSERT statement with bound parameters
-                            # Use CAST to avoid parameter placeholder conflicts with ::json syntax
-                            # Include parent_id, has_children, and dependencies for task tree support
-                            # Handle NULL dependencies properly
-                            if dependencies_json is not None:
-                                sql = text(f"""
-                                    INSERT INTO {table_name} (id, user_id, name, status, inputs, schemas, priority, progress, has_children, has_copy, parent_id, dependencies)
-                                    VALUES (:id, :user_id, :name, :status, CAST(:inputs AS json), CAST(:schemas AS json), 2, 0.0, :has_children, false, :parent_id, CAST(:dependencies AS json))
-                                """)
-                                params = {
-                                    "id": task_id,
-                                    "user_id": task_user_id,
-                                    "name": task_name,
-                                    "status": task_status,
-                                    "inputs": inputs_json,
-                                    "schemas": schemas_json,
-                                    "has_children": task_has_children,
-                                    "parent_id": task_parent_id,
-                                    "dependencies": dependencies_json,
-                                }
-                            else:
-                                sql = text(f"""
-                                    INSERT INTO {table_name} (id, user_id, name, status, inputs, schemas, priority, progress, has_children, has_copy, parent_id, dependencies)
-                                    VALUES (:id, :user_id, :name, :status, CAST(:inputs AS json), CAST(:schemas AS json), 2, 0.0, :has_children, false, :parent_id, NULL)
-                                """)
-                                params = {
-                                    "id": task_id,
-                                    "user_id": task_user_id,
-                                    "name": task_name,
-                                    "status": task_status,
-                                    "inputs": inputs_json,
-                                    "schemas": schemas_json,
-                                    "has_children": task_has_children,
-                                    "parent_id": task_parent_id,
-                                }
-                            
-                            # Execute with parameters
-                            result = await db_session.execute(sql, params)
-                            inserted_count += 1
-                            logger.debug(f"Successfully inserted task {inserted_count}/{len(sorted_tasks)}: {task_id}")
-                        except Exception as insert_error:
-                            # Log error with full details and remove from created_task_ids
-                            logger.error(
-                                f"Failed to insert task {task_data.get('id', 'unknown')}: {insert_error}",
-                                exc_info=True
-                            )
-                            logger.error(
-                                f"Task data that failed: id={task_data.get('id')}, "
-                                f"name={task_data.get('name')}, "
-                                f"parent_id={task_data.get('parent_id')}, "
-                                f"has_children={task_data.get('has_children')}, "
-                                f"dependencies={task_data.get('dependencies')}"
-                            )
-                            if task_data["id"] in created_task_ids:
-                                created_task_ids.remove(task_data["id"])
-                            # Continue with next task
-                            continue
-                    
-                    logger.info(f"Successfully inserted {inserted_count}/{len(sorted_tasks)} tasks before commit")
-                    
-                    if inserted_count == 0:
-                        logger.warning("No tasks were inserted, skipping commit")
-                        return []
-                    
-                    # Commit all inserts in a single transaction
-                    # Use retry mechanism to handle concurrent operation conflicts
-                    import asyncio
-                    max_retries = 3
-                    retry_delay = 0.2  # 200ms delay between retries
-                    
-                    commit_successful = False
-                    for attempt in range(max_retries):
-                        try:
-                            # Clear session state to avoid conflicts with previous operations
-                            db_session.expire_all()
-                            # Delay to let event loop process any pending operations from previous tests
-                            await asyncio.sleep(retry_delay * (attempt + 1))
-                            # Now commit
-                            logger.info(f"Committing transaction (attempt {attempt + 1}/{max_retries})...")
-                            await db_session.commit()
-                            logger.info(f"Transaction committed successfully. Inserted {len(created_task_ids)} tasks.")
-                            commit_successful = True
-                            # Success! Break out of retry loop
-                            break
-                        except Exception as commit_error:
-                            # Check if it's a concurrency error that we can retry
-                            error_str = str(commit_error)
-                            is_retryable = (
-                                "another operation is in progress" in error_str or
-                                "cannot perform operation" in error_str
-                            )
-                            
-                            if is_retryable and attempt < max_retries - 1:
-                                # Retryable error and we have retries left
-                                logger.debug(
-                                    f"Commit failed (attempt {attempt + 1}/{max_retries}), retrying: {commit_error}"
-                                )
-                                # Try to rollback to clean state before retry
-                                try:
-                                    await db_session.rollback()
-                                except Exception:
-                                    pass
-                                continue
-                            else:
-                                # Non-retryable error or out of retries
-                                logger.warning(
-                                    f"Failed to commit batch insert after {attempt + 1} attempts: {commit_error}"
-                                )
-                                try:
-                                    await db_session.rollback()
-                                except Exception:
-                                    pass
-                                created_task_ids.clear()
-                                raise
-                    
-                    if not commit_successful:
-                        logger.error("Failed to commit transaction after all retries. No tasks were saved.")
-                        return []
-                else:
-                    # For sync, use bulk_insert_mappings which is more efficient
-                    db_session.bulk_insert_mappings(TaskModel, tasks_data)
-                    db_session.commit()
-                
-                logger.debug(f"Batch created {len(tasks_data)} demo tasks")
-                
-            except Exception as e:
-                logger.error(
-                    f"Failed to batch create demo tasks: {e}",
-                    exc_info=True
-                )
-                # Rollback on error
+            # Use TaskRepository API to create tasks instead of raw SQL
+            # Sort tasks: parent tasks (parent_id=None) first, then child tasks
+            # This ensures foreign key constraints are satisfied
+            sorted_tasks = sorted(tasks_data, key=lambda t: (t.get("parent_id") is not None, t.get("id")))
+            
+            logger.info(
+                f"Creating {len(sorted_tasks)} tasks using TaskRepository API (sorted: parents first, then children). "
+                f"Parent tasks: {sum(1 for t in sorted_tasks if t.get('parent_id') is None)}, "
+                f"Child tasks: {sum(1 for t in sorted_tasks if t.get('parent_id') is not None)}"
+            )
+            
+            # Create TaskModel instances from task data
+            task_objects = []
+            for task_data in sorted_tasks:
                 try:
-                    if is_async:
-                        await db_session.rollback()
-                    else:
-                        db_session.rollback()
-                except Exception as rollback_err:
-                    # Ignore rollback errors to avoid masking the original error
-                    logger.debug(f"Rollback error (ignored): {rollback_err}")
-                # Return empty list on failure
+                    task_obj = TaskModel(
+                        id=task_data.get("id"),
+                        user_id=task_data.get("user_id"),
+                        name=task_data.get("name"),
+                        status=task_data.get("status", "pending"),
+                        inputs=task_data.get("inputs", {}),
+                        schemas=task_data.get("schemas", {}),
+                        priority=2,
+                        progress=0.0,
+                        has_children=task_data.get("has_children", False),
+                        has_copy=False,
+                        parent_id=task_data.get("parent_id"),
+                        dependencies=task_data.get("dependencies"),
+                    )
+                    task_objects.append(task_obj)
+                except Exception as e:
+                    logger.error(
+                        f"Failed to create TaskModel for task {task_data.get('id', 'unknown')}: {e}",
+                        exc_info=True
+                    )
+                    if task_data["id"] in created_task_ids:
+                        created_task_ids.remove(task_data["id"])
+                    continue
+            
+            if not task_objects:
+                logger.warning("No task objects were created")
                 return []
+            
+            # Use create_pooled_session to ensure correct event loop binding
+            # This avoids "Task got Future attached to a different loop" errors
+            async with create_pooled_session() as db_session:
+                task_repository = TaskRepository(db_session, task_model_class=TaskModel)
+                is_async = task_repository.is_async
+                
+                try:
+                    # Add all tasks to session
+                    if is_async:
+                        # For async, add tasks one by one to avoid conflicts
+                        for task_obj in task_objects:
+                            db_session.add(task_obj)
+                        await db_session.commit()
+                    else:
+                        # For sync, add all at once
+                        db_session.add_all(task_objects)
+                        db_session.commit()
+                    
+                    logger.info(f"Successfully created {len(task_objects)} demo tasks using TaskRepository API")
+                except RuntimeError as e:
+                    # Check if it's an event loop error
+                    if "attached to a different loop" in str(e):
+                        logger.error(
+                            f"Event loop binding error when creating demo tasks: {e}. "
+                            f"This usually happens when SQLAlchemy connection pool is bound to a different event loop. "
+                            f"Try running tests with asyncio_mode='auto' in pytest configuration.",
+                            exc_info=True
+                        )
+                    else:
+                        logger.error(
+                            f"RuntimeError when creating demo tasks: {e}",
+                            exc_info=True
+                        )
+                    # Rollback on error
+                    try:
+                        if is_async:
+                            await db_session.rollback()
+                        else:
+                            db_session.rollback()
+                    except Exception as rollback_err:
+                        logger.debug(f"Rollback error (ignored): {rollback_err}")
+                    # Return empty list on failure
+                    return []
+                except Exception as e:
+                    logger.error(
+                        f"Failed to create demo tasks using TaskRepository API: {e}",
+                        exc_info=True
+                    )
+                    # Rollback on error
+                    try:
+                        if is_async:
+                            await db_session.rollback()
+                        else:
+                            db_session.rollback()
+                    except Exception as rollback_err:
+                        logger.debug(f"Rollback error (ignored): {rollback_err}")
+                    # Return empty list on failure
+                    return []
             
             logger.info(
                 f"Initialized {len(created_task_ids)}/{len(all_metadata)} executor demo tasks for user: {user_id[:20]}..."

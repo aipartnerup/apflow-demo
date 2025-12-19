@@ -41,7 +41,7 @@ async def quota_check_pre_hook(executor: Any, task: Any, inputs: Dict[str, Any])
         user_id = task.user_id or "anonymous"
         
         # Check if user has LLM key
-        # Priority: task.metadata (set by QuotaTaskRoutes) > task.params > inputs
+        # Priority: task.metadata (set by QuotaLimitMiddleware) > task.params > inputs
         has_llm_key = False
         if hasattr(task, 'metadata') and task.metadata:
             has_llm_key = task.metadata.get("has_llm_key", False)

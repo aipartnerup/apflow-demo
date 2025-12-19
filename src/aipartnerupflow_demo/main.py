@@ -121,9 +121,9 @@ def main():
     """
     Main entry point for demo API service
     
-    Uses aipartnerupflow/api/a2a/server.py's create_a2a_server() with:
+    Uses aipartnerupflow's create_runnable_app() with:
     - auto_initialize_extensions=True: Automatically initializes extensions
-    - task_routes_class=QuotaTaskRoutes: Uses quota-aware TaskRoutes
+    - QuotaLimitMiddleware: Handles quota checking and task tree tracking
     
     Then registers demo-specific hooks and middleware.
     """
@@ -134,8 +134,9 @@ def main():
     _initialize_database_tables()
     
     # Create demo application
-    # create_demo_app() will use create_a2a_server() with auto_initialize_extensions=True
+    # create_demo_app() will use create_runnable_app() with auto_initialize_extensions=True
     # This automatically initializes extensions and loads custom TaskModel
+    # QuotaLimitMiddleware handles quota checking and task tree tracking
     app = create_demo_app()
     
     # Register quota tracking hooks after app creation

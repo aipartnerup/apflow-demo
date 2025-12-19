@@ -31,15 +31,16 @@ Based on the requirements document (`docs/requirements.md`), the following featu
 - ✅ `extract_user_id_from_request()` - Extracts user ID
 - ✅ Supports multiple header formats
 
-### 4. Quota-Aware Task Routes ✅
-**File**: `src/aipartnerupflow_demo/api/routes/quota_task_routes.py`
+### 4. Quota Limit Middleware ✅
+**File**: `src/aipartnerupflow_demo/api/middleware/quota_limit.py`
 
-- ✅ `QuotaTaskRoutes` extends `TaskRoutes`
-- ✅ Wraps `handle_task_generate()` with quota checking
-- ✅ Wraps `handle_task_execute()` with quota checking
-- ✅ Returns demo data when free users exceed LLM quota
-- ✅ Tracks task trees when created/executed
+- ✅ `QuotaLimitMiddleware` intercepts `tasks.generate` and `tasks.execute` requests
+- ✅ Checks quota before processing requests
+- ✅ Sets `use_demo=True` when free users exceed LLM quota
+- ✅ Tracks task trees after generation/execution
+- ✅ Adds quota info to responses
 - ✅ Handles concurrency limits
+- ✅ Sets metadata for executor hooks (user_id, has_llm_key)
 
 ### 5. Quota Status Endpoints ✅
 **File**: `src/aipartnerupflow_demo/api/routes/quota_routes.py`
@@ -75,8 +76,8 @@ Based on the requirements document (`docs/requirements.md`), the following featu
 - `src/aipartnerupflow_demo/api/server.py` - Main server creation
 - `src/aipartnerupflow_demo/main.py` - Entry point with hook registration
 
-- ✅ Direct use of `create_a2a_server()` with `auto_initialize_extensions=True`
-- ✅ Custom A2A server creation with QuotaTaskRoutes via `task_routes_class` parameter
+- ✅ Direct use of `create_runnable_app()` with `auto_initialize_extensions=True`
+- ✅ QuotaLimitMiddleware added to middleware stack (no custom task_routes_class needed)
 - ✅ Quota routes added to application
 - ✅ Hook registration on startup (after extensions initialized)
 
@@ -152,7 +153,7 @@ Based on the requirements document (`docs/requirements.md`), the following featu
 - `docs/IMPLEMENTATION.md` - Implementation documentation
 - `src/aipartnerupflow_demo/utils/task_detection.py` - Task detection utilities
 - `src/aipartnerupflow_demo/utils/header_utils.py` - Header parsing utilities
-- `src/aipartnerupflow_demo/api/routes/quota_task_routes.py` - Quota-aware task routes
+- `src/aipartnerupflow_demo/api/middleware/quota_limit.py` - Quota limit middleware for task routes
 - `src/aipartnerupflow_demo/api/routes/quota_routes.py` - Quota status routes
 - `src/aipartnerupflow_demo/api/routes/executor_routes.py` - Executor metadata API routes
 - `src/aipartnerupflow_demo/extensions/quota_hooks.py` - Quota tracking task tree lifecycle hooks
@@ -162,9 +163,10 @@ Based on the requirements document (`docs/requirements.md`), the following featu
 ### Modified Files
 - `src/aipartnerupflow_demo/config/settings.py` - Added quota configuration
 - `src/aipartnerupflow_demo/extensions/rate_limiter.py` - Enhanced with task tree tracking
-- `src/aipartnerupflow_demo/api/server.py` - Uses `create_a2a_server()` directly with quota-aware routes
+- `src/aipartnerupflow_demo/api/server.py` - Uses `create_runnable_app()` with QuotaLimitMiddleware
 - `src/aipartnerupflow_demo/main.py` - Simplified to use auto-initialized extensions and hook registration
 - `src/aipartnerupflow_demo/services/demo_init.py` - Added executor demo tasks initialization
+- `src/aipartnerupflow_demo/services/executor_demo_init.py` - Uses TaskRepository API instead of raw SQL
 - `README.md` - Updated with LLM quota system documentation and Executor Metadata API
 
 ## Notes
@@ -174,6 +176,8 @@ Based on the requirements document (`docs/requirements.md`), the following featu
 - Concurrency limits are enforced in real-time
 - Demo mode uses aipartnerupflow's built-in `use_demo` parameter - executors provide demo data via `get_demo_result()` method
 - Task tree detection happens before execution (static analysis)
-- Extensions are automatically initialized via `create_a2a_server(auto_initialize_extensions=True)`
+- Extensions are automatically initialized via `create_runnable_app(auto_initialize_extensions=True)`
+- Quota logic is handled by QuotaLimitMiddleware, not custom task routes
+- LLM API keys are handled by aipartnerupflow's LLMAPIKeyMiddleware (thread-local context, not environment variables)
 - Executor Metadata API provides access to executor schemas and examples for demo task generation
 
