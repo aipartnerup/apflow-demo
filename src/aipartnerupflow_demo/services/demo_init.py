@@ -5,7 +5,7 @@ Creates demo tasks for specific users, similar to init_examples_data but user-sp
 Also supports initializing demo tasks for all executors based on executor_metadata.
 """
 
-from typing import List, Any, Optional
+from typing import List, Any, Optional, Dict
 from datetime import datetime, timezone, timedelta
 from aipartnerupflow.core.storage import get_default_session
 from aipartnerupflow.core.storage.sqlalchemy.task_repository import TaskRepository
@@ -39,6 +39,24 @@ class DemoInitService:
             "based on executor metadata."
         )
         return []
+    
+    async def check_demo_init_status(self, user_id: str) -> Dict[str, Any]:
+        """
+        Check demo init status for a specific user
+        
+        Returns information about which executors already have demo tasks
+        and which ones can be initialized.
+        
+        Args:
+            user_id: User ID to check status for
+            
+        Returns:
+            Dictionary with demo init status information
+        """
+        from aipartnerupflow_demo.services.executor_demo_init import ExecutorDemoInitService
+        
+        executor_demo_service = ExecutorDemoInitService()
+        return await executor_demo_service.check_demo_init_status(user_id)
     
     async def init_executor_demo_tasks_for_user(self, user_id: str) -> List[str]:
         """

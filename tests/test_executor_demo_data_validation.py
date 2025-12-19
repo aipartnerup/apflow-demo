@@ -234,7 +234,7 @@ async def test_task_id_uniqueness_and_format(test_user_id):
 
 @pytest.mark.asyncio
 async def test_all_executors_have_demo_tasks(test_user_id):
-    """Test that demo tasks are created for all available executors"""
+    """Test that demo tasks exist for all available executors"""
     service = ExecutorDemoInitService()
     
     # Get all executor metadata
@@ -243,28 +243,40 @@ async def test_all_executors_have_demo_tasks(test_user_id):
     if not all_metadata:
         pytest.skip("No executors available to test")
     
-    # Initialize demo tasks
+    # Initialize demo tasks (will skip if already exist)
     created_task_ids = await service.init_all_executor_demo_tasks_for_user(test_user_id)
     
-    # system_info_executor creates 4 tasks (1 parent + 3 children), so total is len(all_metadata) + 3
-    # Check we have at least as many tasks as executors
-    assert len(created_task_ids) >= len(all_metadata), \
-        f"Expected at least {len(all_metadata)} tasks, got {len(created_task_ids)}"
-    
-    # Get task repository
+    # Get task repository to check all tasks for this user
     async with create_pooled_session() as db_session:
-        task_repository = TaskRepository(db_session, task_model_class=get_task_model_class())
+        from sqlalchemy import select
         
-        # Check each executor has at least one corresponding task
+        TaskModel = get_task_model_class()
+        task_repository = TaskRepository(db_session, task_model_class=TaskModel)
+        
+        # Query all demo tasks for this user (not just newly created ones)
+        stmt = select(TaskModel).where(TaskModel.user_id == test_user_id)
+        result = await db_session.execute(stmt)
+        user_tasks = result.scalars().all()
+        
+        # Filter demo tasks (name starts with "Demo:")
+        demo_tasks = [task for task in user_tasks if task.name and task.name.startswith("Demo:")]
+        
+        # Check each executor has at least one corresponding demo task
         executor_ids_in_tasks = set()
-        for task_id in created_task_ids:
-            task = await task_repository.get_task_by_id(task_id)
-            
-            assert task is not None
-            executor_id = task.schemas['method']
-            executor_ids_in_tasks.add(executor_id)
+        for task in demo_tasks:
+            if task.schemas and isinstance(task.schemas, dict):
+                executor_id = task.schemas.get("method")
+                if executor_id:
+                    executor_ids_in_tasks.add(executor_id)
         
-        # Check all executors are represented
+        # Check all executors are represented (either newly created or already existed)
         missing_executors = set(all_metadata.keys()) - executor_ids_in_tasks
         assert len(missing_executors) == 0, \
-            f"Missing demo tasks for executors: {missing_executors}"
+            f"Missing demo tasks for executors: {missing_executors}. " \
+            f"Created: {len(created_task_ids)}, Existing: {len(executor_ids_in_tasks)}"
+        
+        # Verify we have at least one task per executor
+        # Note: system_info_executor creates multiple tasks (parent + children)
+        assert len(executor_ids_in_tasks) == len(all_metadata), \
+            f"Expected demo tasks for all {len(all_metadata)} executors, " \
+            f"found tasks for {len(executor_ids_in_tasks)} executors"

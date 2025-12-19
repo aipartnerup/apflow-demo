@@ -315,6 +315,90 @@ def _generate_demo_task_for_executor(
 class ExecutorDemoInitService:
     """Service for initializing demo tasks for all executors"""
 
+    async def check_demo_init_status(self, user_id: str) -> Dict[str, Any]:
+        """
+        Check demo init status for a specific user
+        
+        Returns information about which executors already have demo tasks
+        and which ones can be initialized.
+        
+        Args:
+            user_id: User ID to check status for
+            
+        Returns:
+            Dictionary with:
+            - can_init: bool - Whether demo init can be performed (has executors without demo tasks)
+            - total_executors: int - Total number of executors
+            - existing_executors: List[str] - Executor IDs that already have demo tasks
+            - missing_executors: List[str] - Executor IDs that don't have demo tasks yet
+            - executor_details: Dict[str, Dict] - Details for each executor (name, has_demo_task)
+        """
+        from aipartnerupflow.core.extensions.executor_metadata import get_all_executor_metadata
+        
+        # Get all executor metadata
+        all_metadata = get_all_executor_metadata()
+        
+        if not all_metadata:
+            return {
+                "can_init": False,
+                "total_executors": 0,
+                "existing_executors": [],
+                "missing_executors": [],
+                "executor_details": {},
+            }
+        
+        # Check which executors already have demo tasks for this user
+        TaskModel = get_task_model_class()
+        existing_executor_ids = set()
+        
+        async with create_pooled_session() as db_session:
+            # Query all tasks for this user that are demo tasks (name starts with "Demo:")
+            try:
+                from sqlalchemy import select
+                
+                # Query tasks by user_id
+                stmt = select(TaskModel).where(TaskModel.user_id == user_id)
+                result = await db_session.execute(stmt)
+                user_tasks = result.scalars().all()
+                
+                for task in user_tasks:
+                    # Check if it's a demo task (name starts with "Demo:")
+                    if task.name and task.name.startswith("Demo:"):
+                        # Extract executor_id from schemas.method
+                        if task.schemas and isinstance(task.schemas, dict):
+                            executor_id = task.schemas.get("method")
+                            if executor_id:
+                                existing_executor_ids.add(executor_id)
+            except Exception as e:
+                logger.warning(f"Failed to check existing demo tasks: {e}")
+                # If check fails, assume no existing tasks
+                existing_executor_ids = set()
+        
+        # Build executor details
+        executor_details = {}
+        missing_executor_ids = []
+        
+        for executor_id, metadata in all_metadata.items():
+            executor_name = metadata.get("name", executor_id)
+            has_demo_task = executor_id in existing_executor_ids
+            
+            executor_details[executor_id] = {
+                "id": executor_id,
+                "name": executor_name,
+                "has_demo_task": has_demo_task,
+            }
+            
+            if not has_demo_task:
+                missing_executor_ids.append(executor_id)
+        
+        return {
+            "can_init": len(missing_executor_ids) > 0,
+            "total_executors": len(all_metadata),
+            "existing_executors": sorted(list(existing_executor_ids)),
+            "missing_executors": sorted(missing_executor_ids),
+            "executor_details": executor_details,
+        }
+
     async def init_all_executor_demo_tasks_for_user(self, user_id: str) -> List[str]:
         """
         Initialize demo tasks for all executors for a specific user
@@ -325,6 +409,7 @@ class ExecutorDemoInitService:
         - Sets task name based on executor name
         - Sets user_id
         
+        Skips executors that already have demo tasks for this user to avoid duplicates.
         These tasks are independent (not part of the same task tree), so they are created
         using batch insert for better performance and to avoid database connection conflicts.
         All tasks are created in a single transaction for efficiency.
@@ -343,15 +428,52 @@ class ExecutorDemoInitService:
                 logger.warning("No executor metadata found")
                 return []
             
-            base_timestamp = int(datetime.now(timezone.utc).timestamp() * 1000)
+            # Check which executors already have demo tasks for this user
             TaskModel = get_task_model_class()
+            existing_executor_ids = set()
+            
+            async with create_pooled_session() as db_session:
+                # Query all tasks for this user that are demo tasks (name starts with "Demo:")
+                try:
+                    from sqlalchemy import select
+                    
+                    # Query tasks by user_id and filter by name starting with "Demo:"
+                    stmt = select(TaskModel).where(TaskModel.user_id == user_id)
+                    result = await db_session.execute(stmt)
+                    user_tasks = result.scalars().all()
+                    
+                    for task in user_tasks:
+                        # Check if it's a demo task (name starts with "Demo:")
+                        if task.name and task.name.startswith("Demo:"):
+                            # Extract executor_id from schemas.method
+                            if task.schemas and isinstance(task.schemas, dict):
+                                executor_id = task.schemas.get("method")
+                                if executor_id:
+                                    existing_executor_ids.add(executor_id)
+                except Exception as e:
+                    logger.warning(f"Failed to check existing demo tasks: {e}, will create all tasks")
+                    # If check fails, continue to create all tasks
+            
+            if existing_executor_ids:
+                logger.info(
+                    f"Found existing demo tasks for {len(existing_executor_ids)} executors: {existing_executor_ids}. "
+                    f"Will skip these and create tasks for remaining executors."
+                )
+            
+            base_timestamp = int(datetime.now(timezone.utc).timestamp() * 1000)
             
             # Prepare all task data as dictionaries (no database operations)
             # Tasks will be created using TaskModel instances and session.add()
             tasks_data = []
             created_task_ids = []
+            skipped_count = 0
             
             for task_index, (executor_id, metadata) in enumerate(all_metadata.items()):
+                # Skip if demo task already exists for this executor
+                if executor_id in existing_executor_ids:
+                    skipped_count += 1
+                    logger.debug(f"Skipping executor '{executor_id}' - demo task already exists")
+                    continue
                 try:
                     executor_name = metadata.get("name", executor_id)
                     
@@ -376,6 +498,11 @@ class ExecutorDemoInitService:
                     continue
             
             if not tasks_data:
+                if skipped_count > 0:
+                    logger.info(
+                        f"All {len(all_metadata)} executors already have demo tasks for user: {user_id[:20]}... "
+                        f"No new tasks created."
+                    )
                 return []
             
             # Use TaskRepository API to create tasks instead of raw SQL
@@ -481,7 +608,8 @@ class ExecutorDemoInitService:
                     return []
             
             logger.info(
-                f"Initialized {len(created_task_ids)}/{len(all_metadata)} executor demo tasks for user: {user_id[:20]}..."
+                f"Initialized {len(created_task_ids)}/{len(all_metadata)} executor demo tasks for user: {user_id[:20]}... "
+                f"(skipped {skipped_count} executors with existing demo tasks)"
             )
             return created_task_ids
             

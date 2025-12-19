@@ -152,9 +152,24 @@ The metadata includes:
 
 The demo can automatically create demo tasks for all executors based on executor_metadata:
 
+**Check Demo Init Status**:
+```bash
+# Check which executors already have demo tasks and which ones can be initialized
+curl http://localhost:8000/api/demo/tasks/init-status
+```
+
+Response includes:
+- `can_init`: Whether demo init can be performed (has executors without demo tasks)
+- `total_executors`: Total number of executors
+- `existing_executors`: List of executor IDs that already have demo tasks
+- `missing_executors`: List of executor IDs that don't have demo tasks yet
+- `executor_details`: Details for each executor (id, name, has_demo_task)
+- `message`: Status description
+
 **Initialize Executor Demo Tasks**:
 ```bash
 # Creates one demo task per executor with inputs generated from input_schema
+# Skips executors that already have demo tasks to avoid duplicates
 curl -X POST http://localhost:8000/api/demo/tasks/init-executors
 ```
 
@@ -163,6 +178,8 @@ Each executor gets a demo task with:
 - `inputs` = Generated from executor's `input_schema` (uses examples or default values)
 - `name` = "Demo: {executor_name}"
 - `user_id` = Current user ID (from session cookie or browser fingerprint)
+
+**Note**: The initialization process automatically skips executors that already have demo tasks for the current user, preventing duplicate task creation.
 
 See `docs/requirements.md` and `docs/IMPLEMENTATION.md` for detailed documentation.
 

@@ -306,3 +306,229 @@ async def test_multiple_initializations_create_different_tasks(test_user_id, cle
         # This is acceptable, but we log it
         print(f"Warning: Task IDs have same timestamps, but this is acceptable if created quickly")
 
+
+@pytest.mark.asyncio
+async def test_check_demo_init_status_no_tasks(test_user_id, cleanup_tasks):
+    """Test check_demo_init_status when user has no demo tasks"""
+    service = ExecutorDemoInitService()
+    
+    # Check status before creating any tasks
+    status = await service.check_demo_init_status(test_user_id)
+    
+    # Verify status structure
+    assert isinstance(status, dict)
+    assert "can_init" in status
+    assert "total_executors" in status
+    assert "existing_executors" in status
+    assert "missing_executors" in status
+    assert "executor_details" in status
+    
+    # Verify values when no tasks exist
+    all_metadata = get_all_executor_metadata()
+    if all_metadata:
+        assert status["can_init"] is True, "Should be able to init when no tasks exist"
+        assert status["total_executors"] == len(all_metadata)
+        assert len(status["existing_executors"]) == 0, "Should have no existing executors"
+        assert len(status["missing_executors"]) == len(all_metadata), "All executors should be missing"
+        assert set(status["missing_executors"]) == set(all_metadata.keys()), "Missing executors should match all executors"
+    else:
+        assert status["can_init"] is False, "Cannot init when no executors exist"
+        assert status["total_executors"] == 0
+
+
+@pytest.mark.asyncio
+async def test_check_demo_init_status_partial_tasks(test_user_id, cleanup_tasks):
+    """Test check_demo_init_status when user has some demo tasks"""
+    service = ExecutorDemoInitService()
+    
+    # Get all executor metadata
+    all_metadata = get_all_executor_metadata()
+    
+    if not all_metadata or len(all_metadata) < 2:
+        pytest.skip("Need at least 2 executors to test partial tasks")
+    
+    # Create demo tasks for first executor only
+    executor_ids = list(all_metadata.keys())
+    first_executor_id = executor_ids[0]
+    
+    # Create a demo task manually for the first executor
+    TaskModel = get_task_model_class()
+    from datetime import datetime, timezone
+    
+    async with create_pooled_session() as db_session:
+        from sqlalchemy import select
+        
+        # Create a demo task for first executor
+        demo_task = TaskModel(
+            id=f"demo_test_{test_user_id[:8]}_{first_executor_id}_{int(datetime.now(timezone.utc).timestamp() * 1000)}",
+            user_id=test_user_id,
+            name=f"Demo: {all_metadata[first_executor_id].get('name', first_executor_id)}",
+            status="pending",
+            inputs={},
+            schemas={"method": first_executor_id},
+            priority=2,
+            progress=0.0,
+            has_children=False,
+            has_copy=False,
+            parent_id=None,
+            dependencies=None,
+        )
+        db_session.add(demo_task)
+        await db_session.commit()
+    
+    # Check status
+    status = await service.check_demo_init_status(test_user_id)
+    
+    # Verify status
+    assert status["can_init"] is True, "Should be able to init when some tasks are missing"
+    assert status["total_executors"] == len(all_metadata)
+    assert len(status["existing_executors"]) == 1, "Should have one existing executor"
+    assert first_executor_id in status["existing_executors"], "First executor should be in existing list"
+    assert len(status["missing_executors"]) == len(all_metadata) - 1, "Should have one less missing executor"
+    assert first_executor_id not in status["missing_executors"], "First executor should not be in missing list"
+
+
+@pytest.mark.asyncio
+async def test_check_demo_init_status_all_tasks_exist(test_user_id, cleanup_tasks):
+    """Test check_demo_init_status when user has all demo tasks"""
+    service = ExecutorDemoInitService()
+    
+    # Initialize all demo tasks
+    created_task_ids = await service.init_all_executor_demo_tasks_for_user(test_user_id)
+    
+    if len(created_task_ids) == 0:
+        pytest.skip("No executors available to test")
+    
+    # Check status after creating all tasks
+    status = await service.check_demo_init_status(test_user_id)
+    
+    # Verify status
+    all_metadata = get_all_executor_metadata()
+    assert status["can_init"] is False, "Should not be able to init when all tasks exist"
+    assert status["total_executors"] == len(all_metadata)
+    assert len(status["existing_executors"]) == len(all_metadata), "All executors should be existing"
+    assert len(status["missing_executors"]) == 0, "Should have no missing executors"
+    assert set(status["existing_executors"]) == set(all_metadata.keys()), "Existing executors should match all executors"
+
+
+@pytest.mark.asyncio
+async def test_check_demo_init_status_executor_details(test_user_id, cleanup_tasks):
+    """Test that executor_details contains correct information"""
+    service = ExecutorDemoInitService()
+    
+    # Get all executor metadata
+    all_metadata = get_all_executor_metadata()
+    
+    if not all_metadata:
+        pytest.skip("No executors available to test")
+    
+    # Check status
+    status = await service.check_demo_init_status(test_user_id)
+    
+    # Verify executor_details structure
+    executor_details = status["executor_details"]
+    assert isinstance(executor_details, dict)
+    assert len(executor_details) == len(all_metadata), "Should have details for all executors"
+    
+    # Verify each executor detail
+    for executor_id, metadata in all_metadata.items():
+        assert executor_id in executor_details, f"Missing details for executor {executor_id}"
+        
+        detail = executor_details[executor_id]
+        assert isinstance(detail, dict)
+        assert "id" in detail
+        assert "name" in detail
+        assert "has_demo_task" in detail
+        
+        assert detail["id"] == executor_id, f"Executor ID mismatch for {executor_id}"
+        assert detail["name"] == metadata.get("name", executor_id), f"Executor name mismatch for {executor_id}"
+        assert isinstance(detail["has_demo_task"], bool), f"has_demo_task should be bool for {executor_id}"
+        
+        # Initially, no tasks should exist
+        assert detail["has_demo_task"] is False, f"Initially, {executor_id} should not have demo task"
+    
+    # Create tasks for some executors
+    executor_ids = list(all_metadata.keys())
+    if len(executor_ids) >= 2:
+        first_executor_id = executor_ids[0]
+        
+        # Create a demo task for first executor
+        TaskModel = get_task_model_class()
+        from datetime import datetime, timezone
+        
+        async with create_pooled_session() as db_session:
+            demo_task = TaskModel(
+                id=f"demo_test_{test_user_id[:8]}_{first_executor_id}_{int(datetime.now(timezone.utc).timestamp() * 1000)}",
+                user_id=test_user_id,
+                name=f"Demo: {all_metadata[first_executor_id].get('name', first_executor_id)}",
+                status="pending",
+                inputs={},
+                schemas={"method": first_executor_id},
+                priority=2,
+                progress=0.0,
+                has_children=False,
+                has_copy=False,
+                parent_id=None,
+                dependencies=None,
+            )
+            db_session.add(demo_task)
+            await db_session.commit()
+        
+        # Check status again
+        status_after = await service.check_demo_init_status(test_user_id)
+        
+        # Verify first executor now has demo task
+        assert status_after["executor_details"][first_executor_id]["has_demo_task"] is True, \
+            f"{first_executor_id} should now have demo task"
+        
+        # Verify other executors still don't have demo tasks
+        for executor_id in executor_ids[1:]:
+            assert status_after["executor_details"][executor_id]["has_demo_task"] is False, \
+                f"{executor_id} should not have demo task"
+
+
+@pytest.mark.asyncio
+async def test_check_demo_init_status_consistency(test_user_id, cleanup_tasks):
+    """Test that check_demo_init_status is consistent with actual task creation"""
+    service = ExecutorDemoInitService()
+    
+    # Check initial status
+    status_before = await service.check_demo_init_status(test_user_id)
+    
+    # Create tasks
+    created_task_ids = await service.init_all_executor_demo_tasks_for_user(test_user_id)
+    
+    if len(created_task_ids) == 0:
+        pytest.skip("No executors available to test")
+    
+    # Check status after creation
+    status_after = await service.check_demo_init_status(test_user_id)
+    
+    # Verify consistency
+    all_metadata = get_all_executor_metadata()
+    
+    # Before: should be able to init, missing all executors
+    assert status_before["can_init"] is True
+    assert len(status_before["missing_executors"]) == len(all_metadata)
+    
+    # After: should not be able to init, missing none
+    assert status_after["can_init"] is False
+    assert len(status_after["missing_executors"]) == 0
+    assert len(status_after["existing_executors"]) == len(all_metadata)
+    
+    # Verify that existing executors match what was created
+    # Note: system_info_executor creates multiple tasks, but we only check for one executor_id
+    created_executor_ids = set()
+    async with create_pooled_session() as db_session:
+        task_repository = TaskRepository(db_session, task_model_class=get_task_model_class())
+        for task_id in created_task_ids:
+            task = await task_repository.get_task_by_id(task_id)
+            if task and task.schemas and isinstance(task.schemas, dict):
+                executor_id = task.schemas.get("method")
+                if executor_id:
+                    created_executor_ids.add(executor_id)
+    
+    # All created executor IDs should be in existing list
+    assert created_executor_ids.issubset(set(status_after["existing_executors"])), \
+        "All created executor IDs should be in existing executors list"
+

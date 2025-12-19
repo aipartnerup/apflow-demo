@@ -63,8 +63,12 @@ def _create_custom_routes() -> List[Route]:
     async def init_executor_demo_tasks_handler(request: Request):
         return await demo_routes.handle_init_executor_demo_tasks(request)
     
+    async def check_demo_init_status_handler(request: Request):
+        return await demo_routes.handle_check_demo_init_status(request)
+    
     routes.append(Route("/api/demo/tasks/init-executors", init_executor_demo_tasks_handler, methods=["POST"]))
-    logger.info("Added demo route: /api/demo/tasks/init-executors")
+    routes.append(Route("/api/demo/tasks/init-status", check_demo_init_status_handler, methods=["GET"]))
+    logger.info("Added demo routes: /api/demo/tasks/init-executors (POST), /api/demo/tasks/init-status (GET)")
     
     # Executor metadata routes
     from aipartnerupflow_demo.api.routes.executor_routes import ExecutorRoutes

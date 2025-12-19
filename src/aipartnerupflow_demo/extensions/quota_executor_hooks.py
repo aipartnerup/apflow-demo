@@ -19,6 +19,9 @@ async def quota_check_pre_hook(executor: Any, task: Any, inputs: Dict[str, Any])
     Uses aipartnerupflow v0.6.0's built-in demo mode by setting use_demo=True
     instead of returning demo data directly.
     
+    Note: LLM API keys are extracted from headers in QuotaLimitMiddleware and passed
+    via params, so executors can access them. This hook only handles quota checking.
+    
     Args:
         executor: Executor instance
         task: TaskModel instance
@@ -41,16 +44,12 @@ async def quota_check_pre_hook(executor: Any, task: Any, inputs: Dict[str, Any])
         user_id = task.user_id or "anonymous"
         
         # Check if user has LLM key
-        # Priority: task.metadata (set by QuotaLimitMiddleware) > task.params > inputs
-        has_llm_key = False
-        if hasattr(task, 'metadata') and task.metadata:
-            has_llm_key = task.metadata.get("has_llm_key", False)
-        elif hasattr(task, 'params') and task.params:
-            # Check if LLM key is in params
-            has_llm_key = bool(task.params.get("llm_api_key") or task.params.get("api_key"))
-        elif inputs:
-            # Check inputs for LLM key (fallback)
-            has_llm_key = bool(inputs.get("llm_api_key") or inputs.get("api_key"))
+        # Priority: inputs (just set above) > task.metadata > task.params
+        has_llm_key = bool(
+            inputs.get("llm_api_key") or inputs.get("api_key") or
+            (hasattr(task, 'metadata') and task.metadata and task.metadata.get("has_llm_key", False)) or
+            (hasattr(task, 'params') and task.params and (task.params.get("llm_api_key") or task.params.get("api_key")))
+        )
         
         # Check quota status
         quota_status = RateLimiter.get_user_quota_status(
