@@ -13,7 +13,7 @@ COPY src/ ./src/
 
 # Install Python dependencies
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -e .
+    pip install --no-cache-dir .
 
 # Create non-root user
 RUN useradd -m -u 1000 appuser && \
