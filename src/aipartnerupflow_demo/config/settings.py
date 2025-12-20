@@ -54,6 +54,12 @@ class DemoSettings(BaseSettings):
     aipartnerupflow_enable_system_routes: bool = os.getenv("AIPARTNERUPFLOW_ENABLE_SYSTEM_ROUTES", "true").lower() in ("true", "1", "yes")
     aipartnerupflow_enable_docs: bool = os.getenv("AIPARTNERUPFLOW_ENABLE_DOCS", "true").lower() in ("true", "1", "yes")
     
+    # CORS origins
+    aipartnerupflow_cors_origins: Optional[str] = os.getenv("AIPARTNERUPFLOW_CORS_ORIGINS")
+    
+    # Database URL
+    database_url: Optional[str] = os.getenv("DATABASE_URL")
+    
     def get_aipartnerupflow_env(self) -> dict[str, str]:
         """Get environment variables for aipartnerupflow"""
         env = {}
@@ -73,6 +79,12 @@ class DemoSettings(BaseSettings):
             env["AIPARTNERUPFLOW_ENABLE_SYSTEM_ROUTES"] = str(self.aipartnerupflow_enable_system_routes).lower()
         if self.aipartnerupflow_enable_docs:
             env["AIPARTNERUPFLOW_ENABLE_DOCS"] = str(self.aipartnerupflow_enable_docs).lower()
+        # Add CORS origins
+        if self.aipartnerupflow_cors_origins:
+            env["AIPARTNERUPFLOW_CORS_ORIGINS"] = self.aipartnerupflow_cors_origins
+        # Add DATABASE_URL
+        if self.database_url:
+            env["DATABASE_URL"] = self.database_url
         return env
 
 

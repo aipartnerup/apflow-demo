@@ -203,6 +203,10 @@ def create_demo_app() -> Any:
         Starlette/FastAPI application instance
     """
     # Set environment variables for aipartnerupflow
+    # Note: Although aipartnerupflow can read from os.environ directly, we need to:
+    # 1. Convert types (int -> str, bool -> "true"/"false")
+    # 2. Ensure default values are set (from settings object)
+    # 3. Guarantee variables are set before create_runnable_app() is called
     aipartnerupflow_env = settings.get_aipartnerupflow_env()
     for key, value in aipartnerupflow_env.items():
         os.environ[key] = value
