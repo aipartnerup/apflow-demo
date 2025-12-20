@@ -165,6 +165,7 @@ def main():
         limit_concurrency=100,  # Increase concurrency limit
         limit_max_requests=1000,  # Increase max requests
         access_log=True,  # Enable access logging for debugging
+        timeout_graceful_shutdown=5.0,  # Graceful shutdown timeout (5 seconds)
     )
 
 

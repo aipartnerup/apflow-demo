@@ -7,7 +7,8 @@ Uses aipartnerupflow's create_runnable_app() directly with all configuration.
 """
 
 import os
-from typing import Any, List
+from contextlib import asynccontextmanager
+from typing import Any, AsyncGenerator, List
 from starlette.routing import Route
 from starlette.requests import Request
 from aipartnerupflow.api.main import create_runnable_app
@@ -130,6 +131,61 @@ def _create_custom_middleware() -> List:
     return middleware
 
 
+@asynccontextmanager
+async def _app_lifespan(app: Any) -> AsyncGenerator[None, None]:
+    """
+    Application lifespan context manager for startup and shutdown
+    
+    Handles cleanup of database connections and other resources on shutdown.
+    """
+    # Startup
+    logger.info("Application startup")
+    yield
+    
+    # Shutdown - cleanup database connections
+    logger.info("Application shutdown - cleaning up resources")
+    try:
+        # Try to get engine and close connections
+        # First try get_default_engine if it exists
+        try:
+            from aipartnerupflow.core.storage import get_default_engine
+            engine = get_default_engine()
+            if engine is not None:
+                # Close all connections in the pool
+                if hasattr(engine, "dispose"):
+                    if hasattr(engine.dispose, "__call__"):
+                        # Check if it's async
+                        import inspect
+                        if inspect.iscoroutinefunction(engine.dispose):
+                            await engine.dispose()
+                        else:
+                            engine.dispose()
+                    else:
+                        engine.dispose()
+                logger.info("Database connection pool closed")
+        except (ImportError, AttributeError):
+            # If get_default_engine doesn't exist, try to get engine from session
+            try:
+                from aipartnerupflow.core.storage import get_default_session
+                session = get_default_session()
+                if session is not None and hasattr(session, "bind"):
+                    engine = session.bind
+                    if engine is not None and hasattr(engine, "dispose"):
+                        if hasattr(engine.dispose, "__call__"):
+                            import inspect
+                            if inspect.iscoroutinefunction(engine.dispose):
+                                await engine.dispose()
+                            else:
+                                engine.dispose()
+                        logger.info("Database connection pool closed via session")
+            except Exception:
+                pass
+    except Exception as e:
+        logger.warning(f"Error during shutdown cleanup: {e}")
+    
+    logger.info("Shutdown complete")
+
+
 def create_demo_app() -> Any:
     """
     Create demo application with middleware and quota-aware routes
@@ -141,6 +197,7 @@ def create_demo_app() -> Any:
     - Loading custom TaskModel if specified
     - Auto-initializing examples if database is empty
     - Creating the application with custom verify_token_func, routes, and middleware
+    - Adding lifespan context manager for proper resource cleanup
     
     Returns:
         Starlette/FastAPI application instance
@@ -166,5 +223,37 @@ def create_demo_app() -> Any:
         custom_middleware=_create_custom_middleware(),  # Custom middleware
         auto_initialize_extensions=True,  # Automatically initialize extensions
     )
+    
+    # Add lifespan context manager for proper resource cleanup on shutdown
+    # This ensures database connections are properly closed when the app shuts down
+    try:
+        from fastapi import FastAPI
+        from starlette.applications import Starlette
+        
+        if isinstance(app, FastAPI):
+            # FastAPI app - use lifespan parameter
+            # Note: We can't modify lifespan after creation, so we log a warning
+            # The lifespan should ideally be passed to create_runnable_app if it supports it
+            logger.debug("FastAPI app detected - lifespan should be set during app creation")
+        elif isinstance(app, Starlette):
+            # Starlette app - try to set lifespan_context on router
+            # lifespan_context should be a callable that takes app and returns async context manager
+            if hasattr(app, "router"):
+                original_lifespan = getattr(app.router, "lifespan_context", None)
+                if original_lifespan is None:
+                    # Assign the function itself, not the result of calling it
+                    app.router.lifespan_context = _app_lifespan
+                    logger.debug("Added lifespan context manager to Starlette app")
+                else:
+                    # Wrap existing lifespan
+                    @asynccontextmanager
+                    async def _wrapped_lifespan(app: Any) -> AsyncGenerator[None, None]:
+                        async with original_lifespan(app):
+                            async with _app_lifespan(app):
+                                yield
+                    app.router.lifespan_context = _wrapped_lifespan
+                    logger.debug("Wrapped existing lifespan context manager")
+    except Exception as e:
+        logger.warning(f"Could not add lifespan context manager: {e}")
     
     return app
