@@ -46,7 +46,7 @@ aipartnerupflow-demo = "aipartnerupflow_demo.main:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
-packages = ["aipartnerupflow_demo"]
+packages = {find = {}}
 
 [tool.setuptools.package-data]
 aipartnerupflow_demo = ["config/*.yaml", "config/*.yml"]
