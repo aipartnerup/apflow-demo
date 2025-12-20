@@ -9,6 +9,7 @@ For system_info_executor, creates an aggregate task with child tasks for cpu, me
 from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime, timezone
 import asyncio
+import time
 from aipartnerupflow.core.extensions.executor_metadata import get_all_executor_metadata
 from aipartnerupflow.core.storage import create_pooled_session
 from aipartnerupflow.core.storage.sqlalchemy.task_repository import TaskRepository
@@ -555,15 +556,33 @@ class ExecutorDemoInitService:
                 is_async = task_repository.is_async
                 
                 try:
-                    # Add all tasks to session
+                    # Add tasks to session sequentially with explicit timestamp and flush to ensure distinct timestamps
+                    # Set timestamp before each flush to ensure each task gets a distinct created_at
                     if is_async:
-                        # For async, add tasks one by one to avoid conflicts
+                        # For async, add tasks one by one, set timestamp, flush, then sleep
                         for task_obj in task_objects:
+                            # Set timestamp explicitly before flush to ensure distinct created_at
+                            current_timestamp = datetime.now(timezone.utc)
+                            task_obj.created_at = current_timestamp
+                            task_obj.updated_at = current_timestamp
                             db_session.add(task_obj)
+                            # Flush to database
+                            await db_session.flush()
+                            # Sleep 100ms between each task to ensure distinct created_at timestamps
+                            await asyncio.sleep(0.1)
                         await db_session.commit()
                     else:
-                        # For sync, add all at once
-                        db_session.add_all(task_objects)
+                        # For sync, add tasks one by one, set timestamp, flush, then sleep
+                        for task_obj in task_objects:
+                            # Set timestamp explicitly before flush to ensure distinct created_at
+                            current_timestamp = datetime.now(timezone.utc)
+                            task_obj.created_at = current_timestamp
+                            task_obj.updated_at = current_timestamp
+                            db_session.add(task_obj)
+                            # Flush to database
+                            db_session.flush()
+                            # Sleep 100ms between each task to ensure distinct created_at timestamps
+                            time.sleep(0.1)
                         db_session.commit()
                     
                     logger.info(f"Successfully created {len(task_objects)} demo tasks using TaskRepository API")
