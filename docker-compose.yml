@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   demo-api:
     build:
@@ -7,15 +5,20 @@ services:
       dockerfile: docker/Dockerfile
     ports:
       - "8000:8000"
-    environment:
-      - DEMO_MODE=true
-      - RATE_LIMIT_ENABLED=true
-      - RATE_LIMIT_DAILY_PER_USER=10
-      - RATE_LIMIT_DAILY_PER_IP=50
-      - AIPARTNERUPFLOW_API_PROTOCOL=a2a
-      - AIPARTNERUPFLOW_API_HOST=0.0.0.0
-      - AIPARTNERUPFLOW_API_PORT=8000
+    # Load environment variables from .env file in project root
+    # If .env doesn't exist, docker-compose will skip it silently
+    env_file:
+      - .env
     volumes:
-      - ./demo:/app/demo
+      - ./.data:/app/.data
+    # Set default values if .env file doesn't exist or variables are not set
+    environment:
+      - DEMO_MODE=${DEMO_MODE:-true}
+      - RATE_LIMIT_ENABLED=${RATE_LIMIT_ENABLED:-true}
+      - RATE_LIMIT_DAILY_PER_USER=${RATE_LIMIT_DAILY_PER_USER:-10}
+      - RATE_LIMIT_DAILY_PER_IP=${RATE_LIMIT_DAILY_PER_IP:-50}
+      - AIPARTNERUPFLOW_API_PROTOCOL=${AIPARTNERUPFLOW_API_PROTOCOL:-a2a}
+      - AIPARTNERUPFLOW_API_HOST=${AIPARTNERUPFLOW_API_HOST:-0.0.0.0}
+      - AIPARTNERUPFLOW_API_PORT=${AIPARTNERUPFLOW_API_PORT:-8000}
     restart: unless-stopped
 
