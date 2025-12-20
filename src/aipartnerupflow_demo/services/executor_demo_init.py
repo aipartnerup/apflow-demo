@@ -357,21 +357,113 @@ class ExecutorDemoInitService:
             try:
                 from sqlalchemy import select
                 
+                logger.info(f"Querying demo tasks for user_id: {user_id}")
+                
                 # Query tasks by user_id
                 stmt = select(TaskModel).where(TaskModel.user_id == user_id)
-                result = await db_session.execute(stmt)
-                user_tasks = result.scalars().all()
+                
+                # Execute query - handle both async and sync sessions
+                # Some SQLAlchemy configurations may return sync results even with async sessions
+                try:
+                    # Try async execution first
+                    result = await db_session.execute(stmt)
+                    user_tasks = result.scalars().all()
+                except TypeError as e:
+                    # If await fails (returns ChunkedIteratorResult), use sync execution
+                    if "can't be used in 'await' expression" in str(e):
+                        result = db_session.execute(stmt)
+                        user_tasks = result.scalars().all()
+                    else:
+                        raise
+                
+                logger.info(
+                    f"Query completed for user_id: {user_id[:20]}... "
+                    f"Found {len(user_tasks)} total tasks for this user"
+                )
+                
+                demo_task_count = 0
+                tasks_without_demo_name = 0
+                tasks_without_schemas = 0
+                tasks_without_method = 0
                 
                 for task in user_tasks:
                     # Check if it's a demo task (name starts with "Demo:")
                     if task.name and task.name.startswith("Demo:"):
+                        demo_task_count += 1
                         # Extract executor_id from schemas.method
                         if task.schemas and isinstance(task.schemas, dict):
                             executor_id = task.schemas.get("method")
                             if executor_id:
                                 existing_executor_ids.add(executor_id)
+                                logger.info(
+                                    f"✓ Found demo task for executor '{executor_id}': "
+                                    f"task_id={task.id}, name={task.name}"
+                                )
+                            else:
+                                tasks_without_method += 1
+                                logger.warning(
+                                    f"✗ Demo task found but schemas.method is missing: "
+                                    f"task_id={task.id}, name={task.name}, "
+                                    f"schemas keys={list(task.schemas.keys()) if isinstance(task.schemas, dict) else 'N/A'}"
+                                )
+                        else:
+                            tasks_without_schemas += 1
+                            logger.warning(
+                                f"✗ Demo task found but schemas is invalid: "
+                                f"task_id={task.id}, name={task.name}, "
+                                f"schemas type={type(task.schemas)}, schemas={task.schemas}"
+                            )
+                    else:
+                        tasks_without_demo_name += 1
+                        # Log first few non-demo tasks for debugging
+                        if tasks_without_demo_name <= 3:
+                            logger.debug(
+                                f"Non-demo task: task_id={task.id}, "
+                                f"name={task.name[:50] if task.name else 'None'}..., "
+                                f"user_id={task.user_id[:20] if task.user_id else 'None'}..."
+                            )
+                
+                if tasks_without_demo_name > 0 or tasks_without_schemas > 0 or tasks_without_method > 0:
+                    logger.warning(
+                        f"Found tasks that don't match demo task criteria: "
+                        f"{tasks_without_demo_name} without 'Demo:' prefix, "
+                        f"{tasks_without_schemas} with invalid schemas, "
+                        f"{tasks_without_method} without schemas.method"
+                    )
+                
+                logger.info(
+                    f"Demo init status check for user_id {user_id[:20]}...: "
+                    f"Found {demo_task_count} demo tasks, "
+                    f"{len(existing_executor_ids)} executors with demo tasks: {sorted(existing_executor_ids)}"
+                )
+                
+                # Diagnostic: If no demo tasks found for this user, check if any demo tasks exist at all
+                if demo_task_count == 0 and len(user_tasks) == 0:
+                    try:
+                        # Check if there are any demo tasks in the database (any user_id)
+                        all_demo_stmt = select(TaskModel).where(TaskModel.name.like("Demo:%"))
+                        try:
+                            all_demo_result = await db_session.execute(all_demo_stmt)
+                            all_demo_tasks = all_demo_result.scalars().all()
+                        except TypeError as e:
+                            # If await fails, use sync execution
+                            if "can't be used in 'await' expression" in str(e):
+                                all_demo_result = db_session.execute(all_demo_stmt)
+                                all_demo_tasks = all_demo_result.scalars().all()
+                            else:
+                                raise
+                        
+                        if all_demo_tasks:
+                            unique_user_ids = set(task.user_id for task in all_demo_tasks if task.user_id)
+                            logger.warning(
+                                f"No demo tasks found for user_id {user_id[:20]}..., "
+                                f"but found {len(all_demo_tasks)} demo tasks in database "
+                                f"for {len(unique_user_ids)} different user(s): {sorted(list(unique_user_ids))[:3]}..."
+                            )
+                    except Exception as diag_e:
+                        logger.debug(f"Diagnostic query failed (non-critical): {diag_e}")
             except Exception as e:
-                logger.warning(f"Failed to check existing demo tasks: {e}")
+                logger.warning(f"Failed to check existing demo tasks: {e}", exc_info=True)
                 # If check fails, assume no existing tasks
                 existing_executor_ids = set()
         
@@ -440,8 +532,17 @@ class ExecutorDemoInitService:
                     
                     # Query tasks by user_id and filter by name starting with "Demo:"
                     stmt = select(TaskModel).where(TaskModel.user_id == user_id)
-                    result = await db_session.execute(stmt)
-                    user_tasks = result.scalars().all()
+                    try:
+                        # Try async execution first
+                        result = await db_session.execute(stmt)
+                        user_tasks = result.scalars().all()
+                    except TypeError as e:
+                        # If await fails (returns ChunkedIteratorResult), use sync execution
+                        if "can't be used in 'await' expression" in str(e):
+                            result = db_session.execute(stmt)
+                            user_tasks = result.scalars().all()
+                        else:
+                            raise
                     
                     for task in user_tasks:
                         # Check if it's a demo task (name starts with "Demo:")
