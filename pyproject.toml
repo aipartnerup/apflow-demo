@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "aipartnerupflow-demo"
-version = "0.1.0"
+version = "0.2.0"
 description = "Demo deployment of aipartnerupflow with rate limiting and pre-computed results"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -24,7 +24,7 @@ classifiers = [
 
 # Core dependencies
 dependencies = [
-    "aipartnerupflow[all]>=0.7.2",  # Core library (includes database support)
+    "aipartnerupflow[all]>=0.7.3",  # Core library (includes database support)
     "fastapi>=0.115.0",              # API framework (already included in a2a, but explicit)
     "python-dotenv>=1.0.0",          # Environment variables
     "pydantic>=2.0.0",                # Data validation
@@ -43,6 +43,7 @@ dev = [
 
 [project.scripts]
 aipartnerupflow-demo = "aipartnerupflow_demo.main:main"
+apflow-demo = "aipartnerupflow_demo.cli:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

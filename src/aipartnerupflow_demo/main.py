@@ -46,16 +46,6 @@ def _load_environment_variables():
 def _initialize_database_tables():
     """Initialize database tables for quota tracking if rate limiting is enabled"""
     
-    # Register custom TaskModel BEFORE initializing tables
-    # This ensures the custom model is used when tables are created/accessed
-    try:
-        from aipartnerupflow.core.config import set_task_model_class
-        from aipartnerupflow_demo.storage.models import CustomTaskModel
-        set_task_model_class(CustomTaskModel)
-        logger.info("Registered custom TaskModel with token_usage and instance_id fields")
-    except Exception as e:
-        logger.warning(f"Failed to register custom TaskModel: {e}")
-    
     if not settings.rate_limit_enabled:
         return
     

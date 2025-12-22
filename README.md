@@ -192,7 +192,14 @@ See `docs/requirements.md` and `docs/IMPLEMENTATION.md` for detailed documentati
 docker-compose up
 
 # Or run directly (uses same database as aipartnerupflow)
+# Option 1: run module directly
 python -m aipartnerupflow_demo.main
+
+# Option 2: use the packaged CLI wrapper (recommended for demo features)
+# After `pip install -e .`, run the wrapper which preloads demo extensions:
+```bash
+apflow-demo tasks all --limit 3
+```
 ```
 
 ### Production Deployment

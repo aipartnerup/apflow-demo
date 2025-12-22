@@ -133,3 +133,16 @@ class CustomTaskModel(BaseTaskModel):
         'concrete': False,  # Not concrete inheritance
     }
 
+    def to_dict(self) -> dict:
+        """Extend base `to_dict` to include custom fields.
+
+        Calls the parent `to_dict` and then appends `token_usage` and
+        `instance_id` so CLI and API JSON output include these fields.
+        """
+        base = super().to_dict()
+        base.update({
+            "token_usage": self.token_usage,
+            "instance_id": self.instance_id,
+        })
+        return base
+
