@@ -274,6 +274,17 @@ def _generate_demo_task_for_executor(
         }
         demo_runnable = False
         demo_requirements = "Requires running aipartnerupflow API instance"
+    elif executor_id == "llm_executor":
+        demo_inputs = {
+            "model": "gpt-3.5-turbo",
+            "messages": [
+                {"role": "system", "content": "You are a helpful assistant."},
+                {"role": "user", "content": "Explain what an AI Agent workflow is in one sentence."}
+            ],
+            "temperature": 0.7
+        }
+        demo_runnable = False
+        demo_requirements = "Requires OPENAI_API_KEY (or other provider keys) in .env"
     elif executor_id == "aggregate_results_executor":
         # For aggregate_results_executor, inputs will be populated by TaskManager
         demo_inputs = {}

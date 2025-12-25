@@ -11,6 +11,7 @@ from starlette.requests import Request
 from aipartnerupflow_demo.utils.user_identification import get_or_create_user_id
 from aipartnerupflow_demo.utils.jwt_utils import generate_demo_jwt_token, get_user_id_from_token
 from aipartnerupflow_demo.config.settings import settings
+from aipartnerupflow_demo.services.user_service import user_tracking_service
 from aipartnerupflow.core.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -73,6 +74,15 @@ class SessionCookieMiddleware(BaseHTTPMiddleware):
             jwt_token = generate_demo_jwt_token(user_id, expires_in_days=365)
             new_token_generated = True
             logger.debug(f"Generated new JWT token from fingerprint for user: {user_id[:20]}...")
+        
+        # Track user activity (async)
+        # We don't necessarily need to await it if we don't want to block the request,
+        # but for demo purposes it's safer to ensure the user exists.
+        try:
+            user_agent = request.headers.get("user-agent")
+            await user_tracking_service.track_user_activity(user_id, source="web", user_agent=user_agent)
+        except Exception as e:
+            logger.error(f"Failed to track user activity: {e}")
         
         # Process request (aipartnerupflow's JWT middleware will read token from cookie automatically)
         response = await call_next(request)

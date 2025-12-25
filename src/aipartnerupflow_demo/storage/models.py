@@ -14,6 +14,31 @@ from aipartnerupflow.core.storage.sqlalchemy.models import Base
 from aipartnerupflow.core.storage.sqlalchemy.models import TaskModel as BaseTaskModel
 
 
+class DemoUser(Base):
+    """
+    User model for demo environment
+    
+    Stores user metadata, credentials (optional), and activity tracking.
+    """
+    __tablename__ = "demo_users"
+    
+    user_id = Column(String(255), primary_key=True, index=True)
+    username = Column(String(255), nullable=False)
+    email = Column(String(255), nullable=True)
+    hashed_password = Column(String(255), nullable=True)
+    status = Column(String(20), default="active")  # active, inactive, pending
+    
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    last_active_at = Column(DateTime(timezone=True), server_default=func.now())
+    source = Column(String(50), nullable=True)
+    user_agent = Column(String(500), nullable=True)
+    
+    __table_args__ = (
+        Index('idx_user_status', 'status'),
+    )
+
+
 class QuotaCounter(Base):
     """
     Daily quota counter for users
