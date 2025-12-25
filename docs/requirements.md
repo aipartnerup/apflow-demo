@@ -118,45 +118,46 @@ Tasks that do not require LLM API calls include:
 #### 2.3.1 Per-User Daily Tracking
 
 **Storage:**
-- Use Redis for distributed quota tracking
-- Key format: `quota:user:{user_id}:{date}` (e.g., `quota:user:user123:2024-01-15`)
-- Store counters for:
-  - Total task trees executed
-  - LLM-consuming task trees executed
-  - Current concurrent task trees
+- Use **SQLAlchemy** with a relational database (DuckDB for local, PostgreSQL for production)
+- Table: `demo_quota_counters`
+- Schema:
+  - `user_id` (String): Unique user identifier
+  - `date` (String, ISO YYYY-MM-DD): Date for quota tracking
+  - `counter_type` (String): 'total' or 'llm'
+  - `count` (Integer): Current usage count
+- Composite Primary Key: `(user_id, date, counter_type)`
 
 **Reset Mechanism:**
-- Daily quotas reset at midnight UTC
-- Use Redis TTL (Time To Live) set to 24 hours for automatic expiration
-- Track by date string (ISO format: YYYY-MM-DD)
+- Daily quotas are reset based on the `date` string in the database.
+- Track by date string (ISO format: YYYY-MM-DD) in UTC.
 
 #### 2.3.2 Per-Task-Tree Tracking
 
 **Task Tree Identification:**
-- Each task tree has a unique root task ID
-- Track task tree status: `pending`, `running`, `completed`, `failed`
+- Each task tree has a unique root task ID.
+- Table: `demo_task_tree_tracking`
 - Store task tree metadata:
-  - User ID
-  - Creation timestamp
-  - LLM-consuming flag
-  - Completion status
-
-**Storage:**
-- Redis key: `task_tree:{root_task_id}`
-- Store JSON with task tree metadata
-- TTL: 7 days (for historical tracking)
+  - `task_tree_id` (String): Primary Key
+  - `user_id` (String): Foreign user identifier
+  - `is_llm_consuming` (String): 'true' or 'false'
+  - `started_at` (DateTime): Creation timestamp
+  - `completed_at` (DateTime): Nullable completion timestamp
 
 #### 2.3.3 System-Wide Concurrency Limits
 
 **Global Concurrency Tracking:**
-- Redis key: `concurrency:global:current`
-- Atomic increment/decrement operations
-- Maximum value: 10 (configurable via `MAX_CONCURRENT_TASK_TREES`)
+- Table: `demo_concurrency_counters`
+- Schema:
+  - `scope` (String): 'system' or 'user'
+  - `identifier` (String): 'global' or `user_id`
+  - `count` (Integer): Currently running task trees
+- Atomic increment/decrement operations (via database updates).
+- Maximum value: 10 (configurable via `MAX_CONCURRENT_TASK_TREES`).
 
 **Per-User Concurrency:**
-- Redis key: `concurrency:user:{user_id}:current`
-- Maximum value: 1 per user
-- Check before starting new task tree
+- Tracks active task trees for each user under the `user` scope in `demo_concurrency_counters`.
+- Maximum value: 1 per user by default.
+- Check before starting new task tree.
 
 **Concurrency Control:**
 - Before starting a task tree:
@@ -227,8 +228,9 @@ Demo data fallback is triggered when:
 
 **Current Implementation:**
 - `RateLimiter` class in `src/aipartnerupflow_demo/extensions/rate_limiter.py`
-- Tracks per-user and per-IP daily limits
-- Uses Redis for storage
+- Tracks per-user and per-IP daily limits.
+- Uses **SQLAlchemy Repository Pattern** (`QuotaRepository`) for storage.
+- Supports **DuckDB** and **PostgreSQL** with unified sync/async compatibility.
 
 **Enhancements Required:**
 1. Add LLM-consuming task tree counter
@@ -359,7 +361,44 @@ def extract_llm_key_from_header(request: Request) -> Optional[str]:
     pass
 ```
 
-## 4. Integration Points
+## 4. User Identification & Management
+
+### 4.1 Hybrid User Identification
+
+The demo implements a privacy-friendly, zero-registration user identification system using a hybrid approach.
+
+**Mechanism Components:**
+1. **Session Cookie**: A persistent cookie (`demo_session_id`) set on the first request.
+2. **Browser Fingerprint**: A hash generated from `User-Agent`, IP address, and other headers.
+3. **Auto-Login**: Transparently associations requests with a `user_id` without explicit login.
+
+**User Selection Flow:**
+- If a session cookie exists, use the `session_id`.
+- If no cookie but a fingerprint is generated, use the fingerprint.
+- If both are missing, generate a new random `user_id`.
+
+### 4.2 User-Agent Tracking & Descriptive Usernames
+
+**Descriptive Usernames**:
+- The system parses the `User-Agent` to extract OS and Browser information.
+- Guests are assigned descriptive usernames like `Guest_Mac_Chrome_abc123`.
+- If parsing fails, a generic `Guest_User_abc123` is used.
+
+**User Metadata Storage**:
+- Table: `demo_users`
+- Stores:
+  - `user_id` (Primary Key)
+  - `username` (Descriptive or generated)
+  - `user_agent` (String, full UA string for auditing)
+  - `last_active_at` (DateTime)
+  - `source` (e.g., 'web', 'cli', 'api')
+  - timestamps (`created_at`, `updated_at`)
+
+### 4.3 CLI Management
+
+The demo adds a `users` plugin to the CLI for administrator auditing:
+- `apflow-demo users list`: View recently active users and their metadata.
+- `apflow-demo users stat`: View aggregate growth and activity statistics.
 
 ### 4.1 task.generate() Integration
 
@@ -526,9 +565,10 @@ RATE_LIMIT_DAILY_PER_USER_PREMIUM=10           # Total task trees per day (no se
 MAX_CONCURRENT_TASK_TREES=10                    # System-wide concurrent task trees
 MAX_CONCURRENT_TASK_TREES_PER_USER=1            # Per-user concurrent task trees
 
-# Redis configuration
-REDIS_URL=redis://localhost:6379
-REDIS_DB=0
+# Database configuration
+# If DATABASE_URL is missing, defaults to: 
+# duckdb:///.data/apflow-demo.duckdb
+DATABASE_URL=postgresql+asyncpg://user:pass@localhost/db
 
 # Demo mode
 DEMO_MODE=true                                   # Enable demo mode
@@ -762,13 +802,6 @@ Response:
 - Fallback: Use task type to find similar demo result
 - Last Resort: Return error indicating demo data unavailable
 
-### 8.3 Redis Unavailable
-
-**Scenario: Redis connection fails**
-- Action: Fall back to in-memory tracking (single instance)
-- Log warning about Redis unavailability
-- Continue operation with degraded functionality
-- Alert: Notify administrators
 
 ## 9. Future Enhancements
 
@@ -835,33 +868,27 @@ Response:
 - [ ] Deploy to staging environment
 - [ ] Monitor and optimize performance
 
-## Appendix A: Redis Key Schema
+## Appendix A: Database Schema (SQLAlchemy)
 
-```
-# User quota tracking
-quota:user:{user_id}:{date} -> {
-  "total": 5,
-  "llm_consuming": 1,
-  "concurrent": 1
-}
+**Table: `demo_users`** (Stores user persistence and metadata)
+- `user_id`: String(255), PK
+- `username`: String(255), Not Null
+- `status`: String(20), Default: 'active'
+- `user_agent`: String(500), Nullable
+- `source`: String(50), Nullable
+- `created_at`: DateTime(timezone=True)
+- `last_active_at`: DateTime(timezone=True)
 
-# Task tree tracking
-task_tree:{root_task_id} -> {
-  "user_id": "user123",
-  "created_at": "2024-01-15T10:00:00Z",
-  "is_llm_consuming": true,
-  "status": "running"
-}
+**Table: `demo_quota_counters`** (Daily usage tracking)
+- `user_id`: String(255), PK
+- `date`: String(10), PK (ISO Date)
+- `counter_type`: String(50), PK ('total' or 'llm')
+- `count`: Integer
 
-# Concurrency tracking
-concurrency:global:current -> 8
-concurrency:user:{user_id}:current -> 1
-
-# Usage statistics
-usage:tasks:total:{date} -> 150
-usage:tasks:demo:{date} -> 50
-usage:tasks:user:{user_id}:{date} -> 5
-```
+**Table: `demo_concurrency_counters`** (Real-time concurrency)
+- `scope`: String(50), PK ('system' or 'user')
+- `identifier`: String(255), PK ('global' or user_id)
+- `count`: Integer
 
 ## Appendix B: Configuration Reference
 
@@ -874,8 +901,6 @@ usage:tasks:user:{user_id}:{date} -> 5
 | `RATE_LIMIT_DAILY_PER_USER_PREMIUM` | 10 | Total task trees per day for premium users |
 | `MAX_CONCURRENT_TASK_TREES` | 10 | System-wide concurrent task trees |
 | `MAX_CONCURRENT_TASK_TREES_PER_USER` | 1 | Per-user concurrent task trees |
-| `REDIS_URL` | `redis://localhost:6379` | Redis connection URL |
-| `REDIS_DB` | 0 | Redis database number |
 | `DEMO_MODE` | `false` | Enable demo mode |
 | `RATE_LIMIT_ENABLED` | `false` | Enable rate limiting |
 

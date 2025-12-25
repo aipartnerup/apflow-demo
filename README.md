@@ -13,6 +13,8 @@ This is an independent application that wraps `aipartnerupflow` (v0.6.0+) as a c
 - **LLM API Key Support**: Supports `X-LLM-API-KEY` header with prefixed format (`openai:sk-...` or `anthropic:sk-ant-...`) or direct format (`sk-...`)
 - **Executor Metadata API**: Query executor metadata and schemas using aipartnerupflow's executor_metadata utilities
 - **Executor Demo Tasks**: Automatically generate demo tasks for all executors based on executor_metadata
+- **User Management CLI**: Built-in commands to analyze user statistics and activity
+- **Automatic Database Setup**: Zero-config initialization with local DuckDB fallback
 
 ## Architecture
 
@@ -71,11 +73,12 @@ The demo includes a comprehensive LLM quota management system:
 
 ### User Identification
 
-**No Registration Required**: The demo uses browser fingerprinting + session cookie approach:
-- **Session Cookie**: Set on first request (`demo_session_id`), persists for 30 days
-- **Browser Fingerprint**: Generated from User-Agent + IP + headers (fallback if cookie cleared)
-- **JWT Support**: If JWT token is provided, user_id is extracted automatically (aipartnerupflow v0.6.0)
-- **Privacy-Friendly**: No personal data collected, fingerprints are hashed
+**No Registration Required**: The demo uses a session cookie + browser fingerprinting hybrid approach:
+- **Session Cookie**: Set on first request (`demo_session_id`), persists for 30 days.
+- **Browser Fingerprinting**: Generated from `User-Agent` + IP + headers (fallback if cookie cleared).
+- **Auto-Login**: Transparently handles guest user creation and session persistence across visits.
+- **User-Agent Tracking**: Captures browser/OS metadata to generate descriptive guest usernames (e.g., `Guest_Mac_Chrome_abc123`).
+- **Privacy-Friendly**: No personal data collected, fingerprints are hashed.
 
 ### Free Users (No LLM Key in Header)
 - **Total Quota**: 10 task trees per day
@@ -181,11 +184,37 @@ Each executor gets a demo task with:
 
 **Note**: The initialization process automatically skips executors that already have demo tasks for the current user, preventing duplicate task creation.
 
-See `docs/requirements.md` and `docs/IMPLEMENTATION.md` for detailed documentation.
+## User Management CLI
 
-## Deployment
+The demo includes a plugin for the `apflow-demo` CLI to manage and analyze users.
 
-### Local Development
+### List Users
+List recently active users with their status and source.
+```bash
+apflow-demo users list --limit 10
+```
+Options:
+- `--limit` (`-l`): Number of users to display (default: 20)
+- `--status` (`-s`): Filter by status (`active`, `inactive`)
+- `--format` (`-f`): Output format (`table`, `json`)
+- `--show-ua`: Show full User-Agent string in the output
+
+### User Statistics
+Display aggregate user statistics for different time periods.
+```bash
+apflow-demo users stat day
+```
+Available periods: `all`, `day`, `week`, `month`, `year`.
+
+## Database Management
+
+The application features **Automatic Database Initialization**.
+
+- **Zero-Config**: If `DATABASE_URL` is not set in `.env` or environment, it automatically creates a DuckDB database at `.data/apflow-demo.duckdb`.
+- **Sync/Async Support**: Fully compatible with both synchronous (DuckDB) and asynchronous (PostgreSQL) engines.
+- **Auto-Migration**: Automatically adds missing columns (like `user_agent`) to existing tables during startup.
+
+## Local Development
 
 ```bash
 # Start with docker-compose
