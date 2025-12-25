@@ -82,7 +82,7 @@ class QuotaRoutes:
             try:
                 async with create_pooled_session() as session:
                     repo = QuotaRepository(session)
-                    total_concurrent = repo.get_concurrency_count("system", "global")
+                    total_concurrent = await repo.get_concurrency_count("system", "global")
             except Exception as e:
                 logger.warning(f"Failed to get concurrency from database: {e}")
                 total_concurrent = 0

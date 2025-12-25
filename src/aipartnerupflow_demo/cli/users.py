@@ -10,6 +10,7 @@ from rich.table import Table
 
 import json
 from datetime import datetime
+from sqlalchemy.ext.asyncio import AsyncSession
 from aipartnerupflow.cli import CLIExtension
 from aipartnerupflow_demo.services.user_service import user_tracking_service
 
@@ -88,8 +89,13 @@ def list(
             stmt = select(DemoUser).order_by(desc(DemoUser.last_active_at)).limit(limit)
             if status:
                 stmt = stmt.where(DemoUser.status == status)
-            result = await session.execute(stmt)
-            return result.scalars().all()
+            
+            if isinstance(session, AsyncSession):
+                result = await session.execute(stmt)
+                return result.scalars().all()
+            else:
+                result = session.execute(stmt)
+                return result.scalars().all()
 
     try:
         users = asyncio.run(_list_users())

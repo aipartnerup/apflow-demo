@@ -15,6 +15,7 @@ from aipartnerupflow.core.storage import create_pooled_session
 from aipartnerupflow.core.storage.sqlalchemy.task_repository import TaskRepository
 from aipartnerupflow.core.config import get_task_model_class
 from aipartnerupflow.core.utils.logger import get_logger
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = get_logger(__name__)
 
@@ -374,18 +375,14 @@ class ExecutorDemoInitService:
                 stmt = select(TaskModel).where(TaskModel.user_id == user_id)
                 
                 # Execute query - handle both async and sync sessions
-                # Some SQLAlchemy configurations may return sync results even with async sessions
-                try:
-                    # Try async execution first
+                is_async_session = isinstance(db_session, AsyncSession)
+                
+                if is_async_session:
                     result = await db_session.execute(stmt)
-                    user_tasks = result.scalars().all()
-                except TypeError as e:
-                    # If await fails (returns ChunkedIteratorResult), use sync execution
-                    if "can't be used in 'await' expression" in str(e):
-                        result = db_session.execute(stmt)
-                        user_tasks = result.scalars().all()
-                    else:
-                        raise
+                else:
+                    result = db_session.execute(stmt)
+                    
+                user_tasks = result.scalars().all()
                 
                 logger.info(
                     f"Query completed for user_id: {user_id[:20]}... "
@@ -453,16 +450,12 @@ class ExecutorDemoInitService:
                     try:
                         # Check if there are any demo tasks in the database (any user_id)
                         all_demo_stmt = select(TaskModel).where(TaskModel.name.like("Demo:%"))
-                        try:
+                        if is_async_session:
                             all_demo_result = await db_session.execute(all_demo_stmt)
-                            all_demo_tasks = all_demo_result.scalars().all()
-                        except TypeError as e:
-                            # If await fails, use sync execution
-                            if "can't be used in 'await' expression" in str(e):
-                                all_demo_result = db_session.execute(all_demo_stmt)
-                                all_demo_tasks = all_demo_result.scalars().all()
-                            else:
-                                raise
+                        else:
+                            all_demo_result = db_session.execute(all_demo_stmt)
+                        
+                        all_demo_tasks = all_demo_result.scalars().all()
                         
                         if all_demo_tasks:
                             unique_user_ids = set(task.user_id for task in all_demo_tasks if task.user_id)
@@ -541,19 +534,16 @@ class ExecutorDemoInitService:
                 try:
                     from sqlalchemy import select
                     
+                    is_async_session = isinstance(db_session, AsyncSession)
+                    
                     # Query tasks by user_id and filter by name starting with "Demo:"
                     stmt = select(TaskModel).where(TaskModel.user_id == user_id)
-                    try:
-                        # Try async execution first
+                    if is_async_session:
                         result = await db_session.execute(stmt)
-                        user_tasks = result.scalars().all()
-                    except TypeError as e:
-                        # If await fails (returns ChunkedIteratorResult), use sync execution
-                        if "can't be used in 'await' expression" in str(e):
-                            result = db_session.execute(stmt)
-                            user_tasks = result.scalars().all()
-                        else:
-                            raise
+                    else:
+                        result = db_session.execute(stmt)
+                    
+                    user_tasks = result.scalars().all()
                     
                     for task in user_tasks:
                         # Check if it's a demo task (name starts with "Demo:")

@@ -61,7 +61,7 @@ class RateLimiter:
                 
                 # Check user limit
                 if user_id:
-                    user_count = repo.get_quota_count(user_id, today, "total")
+                    user_count = await repo.get_quota_count(user_id, today, "total")
                     result["user_count"] = user_count
                     
                     if user_count >= limit_per_user:
@@ -71,7 +71,7 @@ class RateLimiter:
                 
                 # Check IP limit (using IP as user_id for tracking)
                 if ip_address:
-                    ip_count = repo.get_quota_count(f"ip:{ip_address}", today, "total")
+                    ip_count = await repo.get_quota_count(f"ip:{ip_address}", today, "total")
                     result["ip_count"] = ip_count
                     
                     if ip_count >= limit_per_ip:
@@ -110,10 +110,10 @@ class RateLimiter:
                 today = datetime.now(timezone.utc).date().isoformat()
                 
                 if user_id:
-                    repo.increment_quota_count(user_id, today, "total", 1)
+                    await repo.increment_quota_count(user_id, today, "total", 1)
                 
                 if ip_address:
-                    repo.increment_quota_count(f"ip:{ip_address}", today, "total", 1)
+                    await repo.increment_quota_count(f"ip:{ip_address}", today, "total", 1)
         except Exception as e:
             print(f"Warning: Failed to record request: {e}")
     
@@ -148,8 +148,8 @@ class RateLimiter:
                 today = datetime.now(timezone.utc).date().isoformat()
                 
                 # Get current counts
-                total_count = repo.get_quota_count(user_id, today, "total")
-                llm_count = repo.get_quota_count(user_id, today, "llm")
+                total_count = await repo.get_quota_count(user_id, today, "total")
+                llm_count = await repo.get_quota_count(user_id, today, "llm")
                 
                 # Determine limits based on user type
                 if has_llm_key:
@@ -214,11 +214,11 @@ class RateLimiter:
                 repo = QuotaRepository(session)
                 
                 # Check global concurrency
-                global_current = repo.get_concurrency_count("system", "global")
+                global_current = await repo.get_concurrency_count("system", "global")
                 global_limit = settings.max_concurrent_task_trees
                 
                 # Check user concurrency
-                user_current = repo.get_concurrency_count("user", user_id)
+                user_current = await repo.get_concurrency_count("user", user_id)
                 user_limit = settings.max_concurrent_task_trees_per_user
                 
                 result = {
@@ -277,16 +277,16 @@ class RateLimiter:
                 today = datetime.now(timezone.utc).date().isoformat()
                 
                 # Increment quota counters
-                repo.increment_quota_count(user_id, today, "total", 1)
+                await repo.increment_quota_count(user_id, today, "total", 1)
                 if is_llm_consuming:
-                    repo.increment_quota_count(user_id, today, "llm", 1)
+                    await repo.increment_quota_count(user_id, today, "llm", 1)
                 
                 # Increment concurrency counters
-                repo.increment_concurrency("system", "global", 1)
-                repo.increment_concurrency("user", user_id, 1)
+                await repo.increment_concurrency("system", "global", 1)
+                await repo.increment_concurrency("user", user_id, 1)
                 
                 # Start task tree tracking
-                repo.start_task_tree(task_tree_id, user_id, is_llm_consuming)
+                await repo.start_task_tree(task_tree_id, user_id, is_llm_consuming)
                 
                 return True
         except Exception as e:
@@ -317,12 +317,12 @@ class RateLimiter:
                 repo = QuotaRepository(session)
                 
                 # Get task tree tracking to check if it was LLM-consuming
-                tracking = repo.complete_task_tree(task_tree_id)
+                tracking = await repo.complete_task_tree(task_tree_id)
                 
                 if tracking:
                     # Decrement concurrency counters
-                    repo.decrement_concurrency("system", "global", 1)
-                    repo.decrement_concurrency("user", user_id, 1)
+                    await repo.decrement_concurrency("system", "global", 1)
+                    await repo.decrement_concurrency("user", user_id, 1)
         except Exception as e:
             print(f"Warning: Failed to complete task tree tracking: {e}")
     
@@ -366,8 +366,8 @@ class RateLimiter:
                 
                 today = datetime.now(timezone.utc).date().isoformat()
                 
-                total_used = repo.get_quota_count(user_id, today, "total")
-                llm_used = repo.get_quota_count(user_id, today, "llm")
+                total_used = await repo.get_quota_count(user_id, today, "total")
+                llm_used = await repo.get_quota_count(user_id, today, "llm")
                 
                 if has_llm_key:
                     total_limit = settings.rate_limit_daily_per_user_premium

@@ -6,8 +6,9 @@ import logging
 import re
 from datetime import datetime, timezone, timedelta
 from typing import Optional, Dict, Any, List
-from sqlalchemy import select, func, text
+from sqlalchemy import select, func, text, inspect
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
 
 from aipartnerupflow.core.storage import create_pooled_session
 from aipartnerupflow_demo.storage.models import DemoUser, Base
@@ -24,10 +25,29 @@ class UserTrackingService:
             # We use the underlying engine to create tables
             # This is a bit hacky but works for demo/embedded DB
             engine = session.bind
-            async with engine.begin() as conn:
-                await conn.run_sync(Base.metadata.create_all)
-            logger.info("Checked/Created demo tables")
+            
+            # Helper to run sync metadata creation
+            def _create_all(conn):
+                Base.metadata.create_all(conn)
+                # Check if user_agent column exists, add it if not
+                # DuckDB/PostgreSQL support basic ALTER TABLE
+                try:
+                    conn.execute(text("ALTER TABLE demo_users ADD COLUMN user_agent VARCHAR"))
+                    logger.info("Added user_agent column to demo_users table")
+                except Exception:
+                    # Column likely already exists
+                    pass
 
+            if isinstance(session, AsyncSession):
+                async with engine.begin() as conn:
+                    await conn.run_sync(_create_all)
+            else:
+                # Sync engine (like DuckDB)
+                with engine.begin() as conn:
+                    _create_all(conn)
+            
+            logger.info("Checked/Created demo tables")
+    async def _generate_username_from_ua(self, user_id: str, user_agent: Optional[str] = None) -> str:
         if not user_id:
             return "Guest_Unknown"
             
@@ -80,7 +100,8 @@ class UserTrackingService:
         user_id: str, 
         source: Optional[str] = None,
         username_hint: Optional[str] = None,
-        user_agent: Optional[str] = None
+        user_agent: Optional[str] = None,
+        created_at: Optional[datetime] = None
     ) -> DemoUser:
         if not user_id:
             logger.warning("track_user_activity called with empty user_id, skipping")
@@ -96,26 +117,38 @@ class UserTrackingService:
             try:
                 # Check if user exists
                 stmt = select(DemoUser).where(DemoUser.user_id == user_id)
-                result = await session.execute(stmt)
-                user = result.scalar_one_or_none()
+                if isinstance(session, AsyncSession):
+                    result = await session.execute(stmt)
+                    user = result.scalar_one_or_none()
+                else:
+                    result = session.execute(stmt)
+                    user = result.scalar_one_or_none()
 
                 now = datetime.now(timezone.utc)
 
                 if not user:
                     # Create new user
                     username = username_hint or await self._generate_username_from_ua(user_id, user_agent)
-                    user = DemoUser(
-                        user_id=user_id,
-                        username=username,
-                        source=source,
-                        last_active_at=now,
-                        status="active",
-                        user_agent=user_agent
-                    )
+                    
+                    user_data = {
+                        "user_id": user_id,
+                        "username": username,
+                        "source": source,
+                        "last_active_at": now,
+                        "status": "active",
+                        "user_agent": user_agent,
+                    }
+                    if created_at:
+                        user_data["created_at"] = created_at
+                        
+                    user = DemoUser(**user_data)
                     session.add(user)
                     logger.info(f"Created new demo user: {user_id} ({username})")
                     # Try to commit - may fail due to concurrent insertion of same user_id
-                    await session.commit()
+                    if isinstance(session, AsyncSession):
+                        await session.commit()
+                    else:
+                        session.commit()
                 else:
                     # Update activity status
                     user.last_active_at = now
@@ -125,8 +158,12 @@ class UserTrackingService:
                         user_agent_short = user_agent[:50] + "..." if len(user_agent) > 50 else user_agent
                         user.user_agent = user_agent
                         logger.debug(f"Updated user agent for {user_id}: {user_agent_short}")
+                    
                     logger.debug(f"Updated activity for user: {user_id}")
-                    await session.commit()
+                    if isinstance(session, AsyncSession):
+                        await session.commit()
+                    else:
+                        session.commit()
                 
                 return user
             except Exception as e:
@@ -134,12 +171,18 @@ class UserTrackingService:
                 from sqlalchemy.exc import IntegrityError
                 if isinstance(e, IntegrityError) or "UniqueViolationError" in str(e):
                     logger.info(f"User {user_id} created concurrently, retrying update")
-                    await session.rollback()
+                    if isinstance(session, AsyncSession):
+                        await session.rollback()
+                    else:
+                        session.rollback()
                     # Re-run after rollback to update existing record
                     return await self.track_user_activity(user_id, source, username_hint, user_agent)
                 else:
                     logger.error(f"Unexpected error in track_user_activity: {e}", exc_info=True)
-                    await session.rollback()
+                    if isinstance(session, AsyncSession):
+                        await session.rollback()
+                    else:
+                        session.rollback()
                     raise
 
     async def get_user_stats(self, period: str = "all") -> Dict[str, Any]:
@@ -161,7 +204,10 @@ class UserTrackingService:
         async with create_pooled_session() as session:
             # Total users count
             total_stmt = select(func.count(DemoUser.user_id))
-            total_result = await session.execute(total_stmt)
+            if isinstance(session, AsyncSession):
+                total_result = await session.execute(total_stmt)
+            else:
+                total_result = session.execute(total_stmt)
             total_users = total_result.scalar() or 0
 
             # Time filtering
@@ -185,8 +231,12 @@ class UserTrackingService:
                 new_stmt = select(func.count(DemoUser.user_id)).where(DemoUser.created_at >= since)
                 active_stmt = select(func.count(DemoUser.user_id)).where(DemoUser.last_active_at >= since)
                 
-                new_result = await session.execute(new_stmt)
-                active_result = await session.execute(active_stmt)
+                if isinstance(session, AsyncSession):
+                    new_result = await session.execute(new_stmt)
+                    active_result = await session.execute(active_stmt)
+                else:
+                    new_result = session.execute(new_stmt)
+                    active_result = session.execute(active_stmt)
                 
                 new_users = new_result.scalar() or 0
                 active_users = active_result.scalar() or 0
