@@ -4,6 +4,11 @@ import sys
 import runpy
 
 def main() -> None:
+    # Ensure CLI plugins are registered by importing them
+    try:
+        import aipartnerupflow_demo.cli.users  # noqa: F401
+    except Exception:
+        pass
     try:
         import aipartnerupflow_demo
     except Exception:
