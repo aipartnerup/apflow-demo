@@ -5,7 +5,7 @@
 Based on the requirements document (`docs/requirements.md`), the following features have been implemented:
 
 ### 1. Enhanced Rate Limiter ✅
-**File**: `src/aipartnerupflow_demo/extensions/rate_limiter.py`
+**File**: `src/apflow_demo/extensions/rate_limiter.py`
 
 - ✅ `check_task_tree_quota()` - Checks if user can create new task tree
 - ✅ `check_concurrency_limit()` - Checks concurrent task tree limits
@@ -16,7 +16,7 @@ Based on the requirements document (`docs/requirements.md`), the following featu
 - ✅ Supports premium users (10 total, all can be LLM-consuming)
 
 ### 2. Task Tree Detection ✅
-**File**: `src/aipartnerupflow_demo/utils/task_detection.py`
+**File**: `src/apflow_demo/utils/task_detection.py`
 
 - ✅ `is_llm_consuming_task()` - Detects LLM-consuming tasks
 - ✅ `is_llm_consuming_task_tree_node()` - Detects LLM-consuming task trees
@@ -24,7 +24,7 @@ Based on the requirements document (`docs/requirements.md`), the following featu
 - ✅ Checks executor_id, method, type, and configuration
 
 ### 3. Header Parsing ✅
-**File**: `src/aipartnerupflow_demo/utils/header_utils.py`
+**File**: `src/apflow_demo/utils/header_utils.py`
 
 - ✅ `has_llm_key_in_header()` - Detects premium users
 - ✅ `extract_llm_key_from_header()` - Extracts LLM key
@@ -32,7 +32,7 @@ Based on the requirements document (`docs/requirements.md`), the following featu
 - ✅ Supports multiple header formats
 
 ### 4. Quota Limit Middleware ✅
-**File**: `src/aipartnerupflow_demo/api/middleware/quota_limit.py`
+**File**: `src/apflow_demo/api/middleware/quota_limit.py`
 
 - ✅ `QuotaLimitMiddleware` intercepts `tasks.generate` and `tasks.execute` requests
 - ✅ Checks quota before processing requests
@@ -43,28 +43,28 @@ Based on the requirements document (`docs/requirements.md`), the following featu
 - ✅ Sets metadata for executor hooks (user_id, has_llm_key)
 
 ### 5. Quota Status Endpoints ✅
-**File**: `src/aipartnerupflow_demo/api/routes/quota_routes.py`
+**File**: `src/apflow_demo/api/routes/quota_routes.py`
 
 - ✅ `GET /api/quota/status` - User quota status
 - ✅ `GET /api/quota/system-stats` - System statistics
 
 ### 6. Quota Tracking Hook ✅
-**File**: `src/aipartnerupflow_demo/extensions/quota_hooks.py`
+**File**: `src/apflow_demo/extensions/quota_hooks.py`
 
 - ✅ `quota_tracking_on_tree_completed()` - Task tree lifecycle hook
 - ✅ Automatically calls `complete_task_tree()` on root task completion
 - ✅ Registered in `main.py` on startup using `register_task_tree_hook()`
 
 ### 7. Executor-Specific Hooks ✅
-**File**: `src/aipartnerupflow_demo/extensions/quota_executor_hooks.py`
+**File**: `src/apflow_demo/extensions/quota_executor_hooks.py`
 
 - ✅ `quota_check_pre_hook()` - Pre-execution hook for LLM executors
 - ✅ Checks quota before LLM API calls
-- ✅ Sets `use_demo=True` when quota exceeded (uses aipartnerupflow's built-in demo mode)
+- ✅ Sets `use_demo=True` when quota exceeded (uses apflow's built-in demo mode)
 - ✅ Registered for LLM-consuming executors (crewai_executor, generate_executor, etc.)
 
 ### 8. Configuration ✅
-**File**: `src/aipartnerupflow_demo/config/settings.py`
+**File**: `src/apflow_demo/config/settings.py`
 
 - ✅ Added `rate_limit_daily_llm_per_user` (default: 1)
 - ✅ Added `rate_limit_daily_per_user_premium` (default: 10)
@@ -73,8 +73,8 @@ Based on the requirements document (`docs/requirements.md`), the following featu
 
 ### 9. Server Integration ✅
 **Files**: 
-- `src/aipartnerupflow_demo/api/server.py` - Main server creation
-- `src/aipartnerupflow_demo/main.py` - Entry point with hook registration
+- `src/apflow_demo/api/server.py` - Main server creation
+- `src/apflow_demo/main.py` - Entry point with hook registration
 
 - ✅ Direct use of `create_runnable_app()` with `auto_initialize_extensions=True`
 - ✅ QuotaLimitMiddleware added to middleware stack (no custom task_routes_class needed)
@@ -120,7 +120,7 @@ Based on the requirements document (`docs/requirements.md`), the following featu
 4. **Executor Pre-Hooks**:
    - Checks quota before LLM executor execution
    - Sets `use_demo=True` when quota exceeded
-   - Uses aipartnerupflow's built-in demo mode mechanism
+   - Uses apflow's built-in demo mode mechanism
 
 ### Demo Data Mechanism
 
@@ -151,33 +151,33 @@ Based on the requirements document (`docs/requirements.md`), the following featu
 ### New Files
 - `docs/requirements.md` - Requirements document
 - `docs/IMPLEMENTATION.md` - Implementation documentation
-- `src/aipartnerupflow_demo/utils/task_detection.py` - Task detection utilities
-- `src/aipartnerupflow_demo/utils/header_utils.py` - Header parsing utilities
-- `src/aipartnerupflow_demo/api/middleware/quota_limit.py` - Quota limit middleware for task routes
-- `src/aipartnerupflow_demo/api/routes/quota_routes.py` - Quota status routes
-- `src/aipartnerupflow_demo/api/routes/executor_routes.py` - Executor metadata API routes
-- `src/aipartnerupflow_demo/extensions/quota_hooks.py` - Quota tracking task tree lifecycle hooks
-- `src/aipartnerupflow_demo/extensions/quota_executor_hooks.py` - Executor-specific pre-hooks for quota checking
-- `src/aipartnerupflow_demo/services/executor_demo_init.py` - Executor demo tasks initialization service
+- `src/apflow_demo/utils/task_detection.py` - Task detection utilities
+- `src/apflow_demo/utils/header_utils.py` - Header parsing utilities
+- `src/apflow_demo/api/middleware/quota_limit.py` - Quota limit middleware for task routes
+- `src/apflow_demo/api/routes/quota_routes.py` - Quota status routes
+- `src/apflow_demo/api/routes/executor_routes.py` - Executor metadata API routes
+- `src/apflow_demo/extensions/quota_hooks.py` - Quota tracking task tree lifecycle hooks
+- `src/apflow_demo/extensions/quota_executor_hooks.py` - Executor-specific pre-hooks for quota checking
+- `src/apflow_demo/services/executor_demo_init.py` - Executor demo tasks initialization service
 
 ### Modified Files
-- `src/aipartnerupflow_demo/config/settings.py` - Added quota configuration
-- `src/aipartnerupflow_demo/extensions/rate_limiter.py` - Enhanced with task tree tracking
-- `src/aipartnerupflow_demo/api/server.py` - Uses `create_runnable_app()` with QuotaLimitMiddleware
-- `src/aipartnerupflow_demo/main.py` - Simplified to use auto-initialized extensions and hook registration
-- `src/aipartnerupflow_demo/services/demo_init.py` - Added executor demo tasks initialization
-- `src/aipartnerupflow_demo/services/executor_demo_init.py` - Uses TaskRepository API instead of raw SQL
+- `src/apflow_demo/config/settings.py` - Added quota configuration
+- `src/apflow_demo/extensions/rate_limiter.py` - Enhanced with task tree tracking
+- `src/apflow_demo/api/server.py` - Uses `create_runnable_app()` with QuotaLimitMiddleware
+- `src/apflow_demo/main.py` - Simplified to use auto-initialized extensions and hook registration
+- `src/apflow_demo/services/demo_init.py` - Added executor demo tasks initialization
+- `src/apflow_demo/services/executor_demo_init.py` - Uses TaskRepository API instead of raw SQL
 - `README.md` - Updated with LLM quota system documentation and Executor Metadata API
 
 ## Notes
 
-- All quota tracking uses the same database as aipartnerupflow (DuckDB/PostgreSQL), no Redis required
+- All quota tracking uses the same database as apflow (DuckDB/PostgreSQL), no Redis required
 - Quota resets daily at midnight UTC
 - Concurrency limits are enforced in real-time
-- Demo mode uses aipartnerupflow's built-in `use_demo` parameter - executors provide demo data via `get_demo_result()` method
+- Demo mode uses apflow's built-in `use_demo` parameter - executors provide demo data via `get_demo_result()` method
 - Task tree detection happens before execution (static analysis)
 - Extensions are automatically initialized via `create_runnable_app(auto_initialize_extensions=True)`
 - Quota logic is handled by QuotaLimitMiddleware, not custom task routes
-- LLM API keys are handled by aipartnerupflow's LLMAPIKeyMiddleware (thread-local context, not environment variables)
+- LLM API keys are handled by apflow's LLMAPIKeyMiddleware (thread-local context, not environment variables)
 - Executor Metadata API provides access to executor schemas and examples for demo task generation
 

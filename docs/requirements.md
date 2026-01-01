@@ -2,7 +2,7 @@
 
 ## Executive Summary
 
-This document specifies the requirements for implementing a quota management system for the aipartnerupflow-demo application. The system limits LLM API consumption costs by enforcing per-user task tree limits and providing demo data fallback when quotas are exceeded. The implementation supports both free users (with strict limits) and premium users (with LLM key authentication via headers).
+This document specifies the requirements for implementing a quota management system for the apflow-demo application. The system limits LLM API consumption costs by enforcing per-user task tree limits and providing demo data fallback when quotas are exceeded. The implementation supports both free users (with strict limits) and premium users (with LLM key authentication via headers).
 
 **Key Features:**
 - Per-user daily task tree quotas (default: 10 task trees)
@@ -15,7 +15,7 @@ This document specifies the requirements for implementing a quota management sys
 
 ### 1.1 Purpose
 
-The aipartnerupflow-demo application provides a demonstration environment for the aipartnerupflow orchestration framework. To control operational costs while maintaining a good user experience, the system needs to:
+The apflow-demo application provides a demonstration environment for the apflow orchestration framework. To control operational costs while maintaining a good user experience, the system needs to:
 
 1. Limit LLM API consumption per user
 2. Provide graceful degradation when quotas are exceeded
@@ -26,7 +26,7 @@ The aipartnerupflow-demo application provides a demonstration environment for th
 
 This requirements document covers:
 - Quota management system for task trees
-- Integration points with aipartnerupflow core methods (`task.generate`, `task.execute`)
+- Integration points with apflow core methods (`task.generate`, `task.execute`)
 - Demo data injection mechanism
 - User type detection and limit enforcement
 - Concurrency control
@@ -227,7 +227,7 @@ Demo data fallback is triggered when:
 ### 3.1 Rate Limiter Enhancement
 
 **Current Implementation:**
-- `RateLimiter` class in `src/aipartnerupflow_demo/extensions/rate_limiter.py`
+- `RateLimiter` class in `src/apflow_demo/extensions/rate_limiter.py`
 - Tracks per-user and per-IP daily limits.
 - Uses **SQLAlchemy Repository Pattern** (`QuotaRepository`) for storage.
 - Supports **DuckDB** and **PostgreSQL** with unified sync/async compatibility.
@@ -305,7 +305,7 @@ def is_llm_consuming_task_tree(root_task: Task) -> bool:
 
 **Recommended Approach: Route-Level Interception**
 
-Since middleware body reading can be complex, implement interception at the route level by wrapping aipartnerupflow routes:
+Since middleware body reading can be complex, implement interception at the route level by wrapping apflow routes:
 
 ```python
 # Custom route wrapper
@@ -851,7 +851,7 @@ Response:
 - [ ] Create executor wrapper for quota checking
 
 ### Phase 4: API Integration
-- [ ] Create route wrappers for aipartnerupflow routes
+- [ ] Create route wrappers for apflow routes
 - [ ] Implement quota status endpoints
 - [ ] Add error handling for quota exceeded scenarios
 - [ ] Add demo mode indicators in responses
@@ -919,5 +919,5 @@ Response:
 
 **Document Version**: 1.0  
 **Last Updated**: 2024-01-15  
-**Author**: aipartnerupflow-demo Team
+**Author**: apflow-demo Team
 

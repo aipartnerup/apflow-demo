@@ -1,13 +1,13 @@
 #!/bin/bash
-# Deployment script for aipartnerupflow-demo
+# Deployment script for apflow-demo
 
 set -e
 
-echo "Deploying aipartnerupflow-demo..."
+echo "Deploying apflow-demo..."
 
 # Build Docker image
 echo "Building Docker image..."
-docker build -f docker/Dockerfile -t aipartnerupflow-demo:latest .
+docker build -f docker/Dockerfile -t apflow-demo:latest .
 
 # Run with docker-compose
 echo "Starting services with docker-compose..."

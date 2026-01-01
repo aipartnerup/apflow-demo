@@ -25,5 +25,5 @@ USER appuser
 EXPOSE 8000
 
 # Run application
-CMD ["python", "-m", "aipartnerupflow_demo.main"]
+CMD ["python", "-m", "apflow_demo.main"]
 

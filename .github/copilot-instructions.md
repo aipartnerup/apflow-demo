@@ -1,0 +1,66 @@
+# High-Quality Code Specification – Simplicity, Readability, and Maintainability First
+
+## Core Principles (Highest Priority)
+- Always choose the simplest, most readable, and maintainable solution, even if it looks "less fancy."
+- Use design patterns reasonably, but strictly forbid premature abstraction, premature optimization, and over-engineering.
+- If a piece of code takes a reader (including future you) more than 10 seconds to understand, it is bad code.
+- If 10 lines of straightforward code can solve the problem, never use 50 lines of "elegant" design patterns.
+
+## Python Code Quality Requirements
+
+### Readability & Conciseness
+- Variable, function, and class names must precisely describe their purpose. Use full words (abbreviations forbidden except widely accepted ones like `id`, `df`, etc.).
+- Functions should generally not exceed 50 lines; if longer, seriously consider splitting them.
+- Forbid clever but obscure tricks (e.g., excessive list/dict comprehensions, abuse of `*args`/`**kwargs`, or overuse of decorators).
+- Complex logic must be broken into small functions; each function does exactly one thing, and its name must be a verb or verb phrase.
+
+### Type System (Mandatory)
+- 100% type annotations (Type Hints) are required for all new code.
+- Using `Any` is forbidden unless dealing with dynamic JSON or forced by third-party libraries.
+- Prefer modern Python type features: `dataclass`, `TypedDict`, `Protocol`, `NewType`, etc.
+
+### Design & Architecture
+- Favor functional style + data classes over deep class inheritance hierarchies.
+- Composition over inheritance; only introduce abstract base classes or `Protocol` when multiple implementations actually exist.
+- Circular imports are strictly prohibited.
+- Configuration, logging, database connections, and other resources must be injected via dependency injection; never create them at module level.
+
+### Error Handling & Resource Management
+- Expected exceptions must be handled explicitly; bare `except:` is forbidden.
+- File, network, database, and similar resources must be used inside context managers (`with` statement).
+- All public interfaces (APIs, CLI, webhooks, etc.) must validate inputs and return proper errors.
+
+### Logging & Debugging
+- Critical paths must emit `info`-level logs; exceptions must be logged at `error` level with full context.
+- Using `print()` for debugging is forbidden (except in temporary throw-away scripts).
+
+### Testing Requirements
+- All core business logic must have unit tests located in the `tests/` directory.
+- Test function naming: `test_<feature>_<expected_behavior>`, e.g., `test_calculate_tax_when_income_above_threshold`.
+- Use `pytest` + `pytest-cov`; core modules must achieve ≥90% coverage.
+- Never introduce new features or bug fixes without accompanying tests.
+
+### Performance & Security
+- O(n²) or worse algorithms in hot paths are forbidden unless explicitly justified.
+- Any code handling user input must consider injection, overflow, XSS, and other security risks.
+- Hard-coding secrets, passwords, or API keys is strictly prohibited; they must come from configuration or secret management systems.
+
+### Code Formatting (MUST Follow)
+- Line length: 100 characters maximum.
+- Use `ruff` for linting with `line-length = 100`, `target-version = "py310"`.
+- Import order: standard library → third-party → local; sort alphabetically within each group.
+- Use double quotes for strings.
+- Add trailing commas in multi-line collections.
+- Strictly adhere to `ruff` configuration; zero lint errors allowed.
+- Type annotations are required for all new code (pyright validation is a goal, not yet enforced in CI).
+
+### Strict Rules for Code Generation
+- Never create `.md`, `README`, or any documentation files unless explicitly requested.
+- Never create `examples/`, `sample/`, `demo.py`, or similar example files unless explicitly requested.
+- Do not add unnecessary `.pyi` stubs or pollute `__init__.py` with excessive exports.
+- All comments, docstrings, log messages, and error messages must be in English.
+- When modifying the logic of an existing method, always examine the full surrounding context and thoroughly understand the original intent and behavior before making any changes.
+
+### Code Formatting
+- Strictly adhere to `ruff` configuration; zero lint errors allowed.
+- Import order: standard library → third-party → local; sort alphabetically within each group.

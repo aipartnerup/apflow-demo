@@ -1,4 +1,4 @@
 """
-Tests for aipartnerupflow-demo
+Tests for apflow-demo
 """
 

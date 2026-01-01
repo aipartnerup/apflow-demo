@@ -3,8 +3,8 @@ Tests for demo features
 """
 
 import pytest
-from aipartnerupflow_demo.extensions.rate_limiter import RateLimiter
-from aipartnerupflow_demo.config.settings import settings
+from apflow_demo.extensions.rate_limiter import RateLimiter
+from apflow_demo.config.settings import settings
 
 
 def test_rate_limiter_initialization():

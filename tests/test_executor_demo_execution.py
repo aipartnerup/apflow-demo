@@ -10,24 +10,24 @@ import pytest_asyncio
 import asyncio
 import inspect
 from typing import List, Dict, Any
-from aipartnerupflow_demo.services.executor_demo_init import ExecutorDemoInitService
-from aipartnerupflow.core.storage import create_pooled_session
-from aipartnerupflow.core.storage.sqlalchemy.task_repository import TaskRepository
-from aipartnerupflow.core.config import get_task_model_class
-from aipartnerupflow.core.extensions.registry import get_registry
-from aipartnerupflow.core.utils.logger import get_logger
+from apflow_demo.services.executor_demo_init import ExecutorDemoInitService
+from apflow.core.storage import create_pooled_session
+from apflow.core.storage.sqlalchemy.task_repository import TaskRepository
+from apflow.core.config import get_task_model_class
+from apflow.core.extensions.registry import get_registry
+from apflow.core.utils.logger import get_logger
 
 # Import executors to ensure they are registered
 try:
-    import aipartnerupflow.extensions.docker.docker_executor
-    import aipartnerupflow.extensions.stdio.command_executor
-    import aipartnerupflow.extensions.stdio.system_info_executor
-    import aipartnerupflow.extensions.http.rest_executor
-    import aipartnerupflow.extensions.ssh.ssh_executor
-    import aipartnerupflow.extensions.generate.generate_executor
-    import aipartnerupflow.extensions.apflow.api_executor
-    import aipartnerupflow.extensions.mcp.mcp_executor
-    import aipartnerupflow.extensions.grpc.grpc_executor
+    import apflow.extensions.docker.docker_executor
+    import apflow.extensions.stdio.command_executor
+    import apflow.extensions.stdio.system_info_executor
+    import apflow.extensions.http.rest_executor
+    import apflow.extensions.ssh.ssh_executor
+    import apflow.extensions.generate.generate_executor
+    import apflow.extensions.apflow.api_executor
+    import apflow.extensions.mcp.mcp_executor
+    import apflow.extensions.grpc.grpc_executor
 except ImportError as e:
     print(f"Warning: Failed to import some executors: {e}")
 
@@ -39,8 +39,9 @@ SKIP_EXECUTORS = {
     'ssh_executor': 'Requires SSH server (could test with localhost + temp key)',
     'mcp_executor': 'Requires MCP server (no public servers available)',
     'grpc_executor': 'Requires gRPC server (no reliable public API)',
-    'apflow_api_executor': 'Requires running aipartnerupflow instance',
+    'apflow_api_executor': 'Requires running apflow instance',
     'generate_executor': 'Requires OPENAI_API_KEY environment variable',
+    'command_executor': 'Disabled by default for security (requires APFLOW_STDIO_ALLOW_COMMAND=1)',
 }
 
 
@@ -69,12 +70,12 @@ async def cleanup_tasks(test_user_id):
         async with create_pooled_session() as db_session:
             # Query tasks by user_id
             stmt = select(TaskModel).where(TaskModel.user_id == test_user_id)
-            result = await db_session.execute(stmt)
+            result = db_session.execute(stmt)
             tasks = result.scalars().all()
             
             # Delete each task
             for task in tasks:
-                await db_session.delete(task)
+                db_session.delete(task)
             await db_session.commit()
     except Exception:
         pass

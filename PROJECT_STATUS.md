@@ -3,9 +3,9 @@
 ## ✅ Completed
 
 ### 1. Project Structure
-- ✅ Created independent `aipartnerupflow-demo` repository
+- ✅ Created independent `apflow-demo` repository
 - ✅ Set up project structure with proper Python package layout
-- ✅ Configured `pyproject.toml` with `aipartnerupflow[all]` dependency
+- ✅ Configured `pyproject.toml` with `apflow[all]` dependency
 - ✅ Created all necessary directories and files
 
 ### 2. Core Extensions
@@ -14,7 +14,7 @@
 - ✅ **Usage Tracker**: Implemented usage statistics tracking
 
 ### 3. API Layer
-- ✅ **API Server Wrapper**: Created wrapper that uses `aipartnerupflow.api.main.create_app_by_protocol()`
+- ✅ **API Server Wrapper**: Created wrapper that uses `apflow.api.main.create_app_by_protocol()`
 - ✅ **Rate Limit Middleware**: Implemented middleware for rate limiting
 - ✅ **Demo Mode Middleware**: Created middleware framework (note: actual interception should be at route level)
 
@@ -47,8 +47,8 @@
 ### 1. Demo Result Interception
 - ⚠️ **Note**: Demo result interception in middleware is simplified. For production, consider:
   - Implementing route-level interception
-  - Creating custom route handlers that wrap aipartnerupflow routes
-  - Using request/response hooks in aipartnerupflow
+  - Creating custom route handlers that wrap apflow routes
+  - Using request/response hooks in apflow
 
 ### 2. Pre-compute Actual Results
 - ⏳ Execute demo tasks with LLM API keys
@@ -61,7 +61,7 @@
 - ⏳ Set up monitoring and logging
 
 ### 4. WebApp Integration
-- ⏳ Deploy aipartnerupflow-webapp
+- ⏳ Deploy apflow-webapp
 - ⏳ Configure webapp to point to demo API URL
 - ⏳ Test end-to-end flow
 
@@ -75,7 +75,7 @@
 ### Architecture Decisions
 
 1. **Independent Repository**: Created as separate repository to keep demo code isolated from community release
-2. **Wrapper Pattern**: Uses aipartnerupflow as dependency, wrapping its API with demo-specific middleware
+2. **Wrapper Pattern**: Uses apflow as dependency, wrapping its API with demo-specific middleware
 3. **Configuration-Driven**: All demo features controlled via environment variables
 4. **Redis for Rate Limiting**: Uses Redis for distributed rate limiting (can scale horizontally)
 
@@ -97,7 +97,7 @@
 
 1. **Pre-compute Demo Results**: Execute demo tasks and save results
 2. **Deploy Demo API**: Deploy to production server
-3. **Deploy WebApp**: Deploy aipartnerupflow-webapp with demo API URL
+3. **Deploy WebApp**: Deploy apflow-webapp with demo API URL
 4. **Update Website**: Deploy website with demo links
 5. **Test End-to-End**: Verify complete demo flow works
 6. **Monitor**: Set up monitoring and alerting

@@ -8,23 +8,23 @@ of created executor demo tasks to identify any data problems.
 import pytest
 import asyncio
 from typing import Dict, Any
-from aipartnerupflow_demo.services.executor_demo_init import ExecutorDemoInitService
-from aipartnerupflow.core.storage import create_pooled_session
-from aipartnerupflow.core.storage.sqlalchemy.task_repository import TaskRepository
-from aipartnerupflow.core.config import get_task_model_class
-from aipartnerupflow.core.extensions.executor_metadata import get_all_executor_metadata
+from apflow_demo.services.executor_demo_init import ExecutorDemoInitService
+from apflow.core.storage import create_pooled_session
+from apflow.core.storage.sqlalchemy.task_repository import TaskRepository
+from apflow.core.config import get_task_model_class
+from apflow.core.extensions.executor_metadata import get_all_executor_metadata
 
 # Import executors to ensure they are registered
 try:
-    import aipartnerupflow.extensions.docker.docker_executor
-    import aipartnerupflow.extensions.stdio.command_executor
-    import aipartnerupflow.extensions.stdio.system_info_executor
-    import aipartnerupflow.extensions.http.rest_executor
-    import aipartnerupflow.extensions.ssh.ssh_executor
-    import aipartnerupflow.extensions.generate.generate_executor
-    import aipartnerupflow.extensions.apflow.api_executor
-    import aipartnerupflow.extensions.mcp.mcp_executor
-    import aipartnerupflow.extensions.grpc.grpc_executor
+    import apflow.extensions.docker.docker_executor
+    import apflow.extensions.stdio.command_executor
+    import apflow.extensions.stdio.system_info_executor
+    import apflow.extensions.http.rest_executor
+    import apflow.extensions.ssh.ssh_executor
+    import apflow.extensions.generate.generate_executor
+    import apflow.extensions.apflow.api_executor
+    import apflow.extensions.mcp.mcp_executor
+    import apflow.extensions.grpc.grpc_executor
 except ImportError as e:
     print(f"Warning: Failed to import some executors: {e}")
 
@@ -255,7 +255,7 @@ async def test_all_executors_have_demo_tasks(test_user_id):
         
         # Query all demo tasks for this user (not just newly created ones)
         stmt = select(TaskModel).where(TaskModel.user_id == test_user_id)
-        result = await db_session.execute(stmt)
+        result = db_session.execute(stmt)
         user_tasks = result.scalars().all()
         
         # Filter demo tasks (name starts with "Demo:")

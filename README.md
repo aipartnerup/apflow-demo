@@ -1,30 +1,30 @@
-# aipartnerupflow-demo
+# apflow-demo
 
-Demo deployment of aipartnerupflow with rate limiting and quota management.
+Demo deployment of apflow with rate limiting and quota management.
 
-This is an independent application that wraps `aipartnerupflow` (v0.6.0+) as a core library, adding demo-specific features like:
+This is an independent application that wraps `apflow` (v0.10.0+) as a core library, adding demo-specific features like:
 - **LLM Quota Management**: Per-user task tree limits with LLM-consuming restrictions
 - **Rate limiting**: Per user/IP daily limits
-- **Built-in Demo Mode**: Uses aipartnerupflow v0.6.0's `use_demo` parameter for automatic demo data fallback
+- **Built-in Demo Mode**: Uses apflow v0.6.0's `use_demo` parameter for automatic demo data fallback
 - **User Identification**: Browser fingerprinting + session cookie hybrid approach (no registration required)
 - **Demo-specific API middleware**: Quota checking and demo data injection
 - **Usage tracking**: Task execution and quota usage statistics
 - **Concurrency control**: System-wide and per-user concurrent task tree limits
 - **LLM API Key Support**: Supports `X-LLM-API-KEY` header with prefixed format (`openai:sk-...` or `anthropic:sk-ant-...`) or direct format (`sk-...`)
-- **Executor Metadata API**: Query executor metadata and schemas using aipartnerupflow's executor_metadata utilities
+- **Executor Metadata API**: Query executor metadata and schemas using apflow's executor_metadata utilities
 - **Executor Demo Tasks**: Automatically generate demo tasks for all executors based on executor_metadata
 - **User Management CLI**: Built-in commands to analyze user statistics and activity
 - **Automatic Database Setup**: Zero-config initialization with local DuckDB fallback
 
 ## Architecture
 
-This application uses `aipartnerupflow[all]>=0.6.0` as a dependency and leverages new v0.6.0 features:
+This application uses `apflow[all]>=0.6.0` as a dependency and leverages new v0.6.0 features:
 - **TaskRoutes Extension**: Uses `task_routes_class` parameter (no monkey patching)
 - **Task Tree Lifecycle Hooks**: Uses `register_task_tree_hook()` for explicit lifecycle events
 - **Executor-Specific Hooks**: Uses `add_executor_hook()` for quota checks at executor level
 - **Built-in Demo Mode**: Uses `use_demo` parameter for automatic demo data
 - **Automatic User ID Extraction**: Leverages JWT extraction with browser fingerprinting fallback
-- **Database Storage**: Uses the same database as aipartnerupflow (DuckDB/PostgreSQL) for quota tracking, no Redis required
+- **Database Storage**: Uses the same database as apflow (DuckDB/PostgreSQL) for quota tracking, no Redis required
 
 ## Quick Start
 
@@ -38,14 +38,14 @@ pip install -e ".[dev]"
 docker-compose up
 
 # Or run directly
-python -m aipartnerupflow_demo.main
+python -m apflow_demo.main
 ```
 
 ### Production
 
 ```bash
 # Build Docker image
-docker build -f docker/Dockerfile -t aipartnerupflow-demo .
+docker build -f docker/Dockerfile -t apflow-demo .
 
 # Run with docker-compose
 docker-compose up -d
@@ -65,7 +65,7 @@ Key environment variables:
 - `MAX_CONCURRENT_TASK_TREES_PER_USER=1`: Per-user concurrent task trees
 - `RATE_LIMIT_DAILY_PER_IP=50`: Daily limit per IP
 
-**Note**: Rate limiting uses the same database as aipartnerupflow (DuckDB/PostgreSQL), no Redis required.
+**Note**: Rate limiting uses the same database as apflow (DuckDB/PostgreSQL), no Redis required.
 
 ## LLM Quota System
 
@@ -130,7 +130,7 @@ curl http://localhost:8000/api/quota/status
 
 ## Executor Metadata API
 
-The demo provides endpoints to query executor metadata using aipartnerupflow's executor_metadata utilities:
+The demo provides endpoints to query executor metadata using apflow's executor_metadata utilities:
 
 **Get All Executor Metadata**:
 ```bash
@@ -220,9 +220,9 @@ The application features **Automatic Database Initialization**.
 # Start with docker-compose
 docker-compose up
 
-# Or run directly (uses same database as aipartnerupflow)
+# Or run directly (uses same database as apflow)
 # Option 1: run module directly
-python -m aipartnerupflow_demo.main
+python -m apflow_demo.main
 
 # Option 2: use the packaged CLI wrapper (recommended for demo features)
 # After `pip install -e .`, run the wrapper which preloads demo extensions:
@@ -235,7 +235,7 @@ apflow-demo tasks all --limit 3
 
 1. **Build Docker image**:
    ```bash
-   docker build -f docker/Dockerfile -t aipartnerupflow-demo:latest .
+   docker build -f docker/Dockerfile -t apflow-demo:latest .
    ```
 
 2. **Deploy with docker-compose**:
@@ -246,13 +246,13 @@ apflow-demo tasks all --limit 3
 3. **Or deploy to cloud**:
    - Update environment variables in `.env` or docker-compose.yml
    - Set `DEMO_MODE=true` and `RATE_LIMIT_ENABLED=true`
-   - Configure database connection (same as aipartnerupflow)
+   - Configure database connection (same as apflow)
    - Deploy to your cloud provider
 
-### Integration with aipartnerupflow-webapp
+### Integration with apflow-webapp
 
 1. **Deploy demo API** (this repository) to your server
-2. **Deploy aipartnerupflow-webapp** and configure it to point to demo API:
+2. **Deploy apflow-webapp** and configure it to point to demo API:
    ```bash
    NEXT_PUBLIC_API_URL=https://demo-api.aipartnerup.com
    ```

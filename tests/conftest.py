@@ -6,7 +6,11 @@ for SQLAlchemy async engine connection pool to work correctly.
 """
 
 import asyncio
+import logging
 import pytest
+
+# Suppress LiteLLM logging errors about missing apscheduler
+logging.getLogger("litellm.litellm_core_utils.litellm_logging").setLevel(logging.CRITICAL)
 
 
 @pytest.fixture(scope="session")

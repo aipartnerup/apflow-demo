@@ -9,23 +9,23 @@ import pytest
 import pytest_asyncio
 import asyncio
 from typing import List, Dict, Any
-from aipartnerupflow_demo.services.executor_demo_init import ExecutorDemoInitService
-from aipartnerupflow.core.storage import create_pooled_session
-from aipartnerupflow.core.storage.sqlalchemy.task_repository import TaskRepository
-from aipartnerupflow.core.config import get_task_model_class
-from aipartnerupflow.core.extensions.executor_metadata import get_all_executor_metadata
+from apflow_demo.services.executor_demo_init import ExecutorDemoInitService
+from apflow.core.storage import create_pooled_session
+from apflow.core.storage.sqlalchemy.task_repository import TaskRepository
+from apflow.core.config import get_task_model_class
+from apflow.core.extensions.executor_metadata import get_all_executor_metadata
 
 # Import executors to ensure they are registered
 try:
-    import aipartnerupflow.extensions.docker.docker_executor
-    import aipartnerupflow.extensions.stdio.command_executor
-    import aipartnerupflow.extensions.stdio.system_info_executor
-    import aipartnerupflow.extensions.http.rest_executor
-    import aipartnerupflow.extensions.ssh.ssh_executor
-    import aipartnerupflow.extensions.generate.generate_executor
-    import aipartnerupflow.extensions.apflow.api_executor
-    import aipartnerupflow.extensions.mcp.mcp_executor
-    import aipartnerupflow.extensions.grpc.grpc_executor
+    import apflow.extensions.docker.docker_executor
+    import apflow.extensions.stdio.command_executor
+    import apflow.extensions.stdio.system_info_executor
+    import apflow.extensions.http.rest_executor
+    import apflow.extensions.ssh.ssh_executor
+    import apflow.extensions.generate.generate_executor
+    import apflow.extensions.apflow.api_executor
+    import apflow.extensions.mcp.mcp_executor
+    import apflow.extensions.grpc.grpc_executor
 except ImportError as e:
     print(f"Warning: Failed to import some executors: {e}")
 
@@ -62,12 +62,12 @@ async def cleanup_tasks(test_user_id):
         async with create_pooled_session() as db_session:
             # Query tasks by user_id
             stmt = select(TaskModel).where(TaskModel.user_id == test_user_id)
-            result = await db_session.execute(stmt)
+            result = db_session.execute(stmt)
             tasks = result.scalars().all()
             
             # Delete each task
             for task in tasks:
-                await db_session.delete(task)
+                db_session.delete(task)
             await db_session.commit()
     except Exception as e:
         # Ignore cleanup errors
@@ -374,7 +374,7 @@ async def test_check_demo_init_status_partial_tasks(test_user_id, cleanup_tasks)
             dependencies=None,
         )
         db_session.add(demo_task)
-        await db_session.commit()
+        db_session.commit()
     
     # Check status
     status = await service.check_demo_init_status(test_user_id)
@@ -472,7 +472,7 @@ async def test_check_demo_init_status_executor_details(test_user_id, cleanup_tas
                 dependencies=None,
             )
             db_session.add(demo_task)
-            await db_session.commit()
+            db_session.commit()
         
         # Check status again
         status_after = await service.check_demo_init_status(test_user_id)
