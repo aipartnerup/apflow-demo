@@ -18,7 +18,7 @@ from apflow_demo.api.middleware.session_cookie import SessionCookieMiddleware
 from apflow_demo.api.middleware.quota_limit import QuotaLimitMiddleware
 from apflow_demo.utils.jwt_utils import verify_demo_jwt_token
 from apflow_demo.config.settings import settings
-from apflow.core.utils.logger import get_logger
+from apflow.logger import get_logger
 
 logger = get_logger(__name__)
 

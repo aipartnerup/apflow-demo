@@ -13,7 +13,7 @@ from apflow.core.extensions.executor_metadata import (
     get_executor_metadata,
     get_all_executor_metadata,
 )
-from apflow.core.utils.logger import get_logger
+from apflow.logger import get_logger
 
 logger = get_logger(__name__)
 

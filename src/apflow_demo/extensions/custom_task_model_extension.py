@@ -8,7 +8,7 @@ the custom TaskModel is used by both API server and CLI tools.
 
 from importlib import import_module
 from apflow_demo.storage.models import CustomTaskModel
-from apflow.core.utils.logger import get_logger
+from apflow.logger import get_logger
 
 logger = get_logger(__name__)
 

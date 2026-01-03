@@ -8,7 +8,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 from apflow_demo.services.demo_init import DemoInitService
 from apflow_demo.utils.header_utils import extract_user_id_from_request
-from apflow.core.utils.logger import get_logger
+from apflow.logger import get_logger
 
 logger = get_logger(__name__)
 

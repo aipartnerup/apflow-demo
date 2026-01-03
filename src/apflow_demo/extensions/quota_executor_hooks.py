@@ -5,7 +5,7 @@ Uses apflow v0.6.0's executor-specific hooks instead of wrapper pattern.
 """
 
 from typing import Any, Dict
-from apflow.core.utils.logger import get_logger
+from apflow.logger import get_logger
 from apflow_demo.extensions.rate_limiter import RateLimiter
 from apflow_demo.utils.task_detection import is_llm_consuming_task_schema
 

@@ -14,7 +14,7 @@ from apflow.core.extensions.executor_metadata import get_all_executor_metadata
 from apflow.core.storage import create_pooled_session
 from apflow.core.storage.sqlalchemy.task_repository import TaskRepository
 from apflow.core.config import get_task_model_class
-from apflow.core.utils.logger import get_logger
+from apflow.logger import get_logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = get_logger(__name__)

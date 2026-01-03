@@ -54,34 +54,8 @@ class UsersApp(CLIExtension):
         async def _get_stats():
             return await user_tracking_service.get_user_stats(period)
 
-<<<<<<< HEAD:src/apflow_demo/cli/users.py
-
-@users_app.command()
-def list(
-    limit: int = typer.Option(20, "--limit", "-l", help="Number of users to display"),
-    status: Optional[str] = typer.Option(None, "--status", "-s", help="Filter by status"),
-    output_format: str = typer.Option(
-        "table", "--format", "-f", help="Output format: table, json"
-    ),
-    show_ua: bool = typer.Option(False, "--show-ua", help="Show User-Agent in table output")
-):
-    """
-    List demo users (latest active first)
-    """
-    from sqlalchemy import select
-    from sqlalchemy.sql import desc
-    from apflow.core.storage import create_pooled_session
-    from apflow_demo.storage.models import DemoUser
-
-    async def _list_users():
-        async with create_pooled_session() as session:
-            stmt = select(DemoUser).order_by(desc(DemoUser.last_active_at)).limit(limit)
-            if status:
-                stmt = stmt.where(DemoUser.status == status)
-=======
         try:
             stats = asyncio.run(_get_stats())
->>>>>>> f3c6c122c8f55bb48c02e0390200254dfc406664:src/apflow_demo/cli/users.py
             
             if output_format == "json":
                 console.print(json.dumps(stats, indent=2))

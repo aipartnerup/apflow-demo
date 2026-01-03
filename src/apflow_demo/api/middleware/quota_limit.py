@@ -24,7 +24,7 @@ from apflow_demo.utils.header_utils import (
 )
 from apflow_demo.utils.task_detection import detect_task_tree_from_tasks_array
 from apflow_demo.config.settings import settings
-from apflow.core.utils.logger import get_logger
+from apflow.logger import get_logger
 
 logger = get_logger(__name__)
 

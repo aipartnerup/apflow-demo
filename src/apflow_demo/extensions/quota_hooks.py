@@ -9,7 +9,7 @@ Uses apflow v0.6.0's register_task_tree_hook instead of post-hook with manual ro
 from apflow.core.storage.sqlalchemy.models import TaskModel
 from apflow_demo.extensions.rate_limiter import RateLimiter
 from apflow_demo.config.settings import settings
-from apflow.core.utils.logger import get_logger
+from apflow.logger import get_logger
 
 logger = get_logger(__name__)
 

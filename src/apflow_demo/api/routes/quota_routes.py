@@ -15,7 +15,7 @@ from apflow_demo.utils.header_utils import (
     extract_user_id_from_request,
 )
 from apflow_demo.config.settings import settings
-from apflow.core.utils.logger import get_logger
+from apflow.logger import get_logger
 from datetime import datetime, timezone
 
 logger = get_logger(__name__)

@@ -12,7 +12,7 @@ from apflow_demo.utils.user_identification import get_or_create_user_id
 from apflow_demo.utils.jwt_utils import generate_demo_jwt_token, get_user_id_from_token
 from apflow_demo.config.settings import settings
 from apflow_demo.services.user_service import user_tracking_service
-from apflow.core.utils.logger import get_logger
+from apflow.logger import get_logger
 
 logger = get_logger(__name__)
 

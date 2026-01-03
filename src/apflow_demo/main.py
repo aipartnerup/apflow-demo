@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 from apflow_demo.api.server import create_demo_app
 from apflow_demo.config.settings import settings
-from apflow.core.utils.logger import get_logger
+from apflow.logger import get_logger
 
 # Suppress specific warnings for cleaner output
 warnings.filterwarnings("ignore", category=SyntaxWarning, module="pysbd")

@@ -6,7 +6,7 @@ Provides endpoints for authentication-related functionality.
 
 from starlette.requests import Request
 from starlette.responses import JSONResponse
-from apflow.core.utils.logger import get_logger
+from apflow.logger import get_logger
 
 logger = get_logger(__name__)
 

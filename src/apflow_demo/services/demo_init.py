@@ -10,7 +10,7 @@ from datetime import datetime, timezone, timedelta
 from apflow.core.storage import get_default_session
 from apflow.core.storage.sqlalchemy.task_repository import TaskRepository
 from apflow.core.config import get_task_model_class
-from apflow.core.utils.logger import get_logger
+from apflow.logger import get_logger
 
 logger = get_logger(__name__)
 
