@@ -97,7 +97,7 @@ class UsersApp(CLIExtension):
             if stats is None:
                 async def _get_stats():
                     return await user_tracking_service.get_user_stats(period)
-            stats = asyncio.run(_get_stats())
+                stats = asyncio.run(_get_stats())
             
             if output_format == "json":
                 console.print(json.dumps(stats, indent=2))
