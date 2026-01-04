@@ -107,9 +107,9 @@ def _register_quota_hooks():
         logger.warning(f"Failed to register executor hooks: {e}")
 
 
-def main():
+def start_server() -> None:
     """
-    Main entry point for demo API service
+    Start the demo API server
     
     Uses apflow's create_runnable_app() with:
     - auto_initialize_extensions=True: Automatically initializes extensions
@@ -157,6 +157,17 @@ def main():
         access_log=True,  # Enable access logging for debugging
         timeout_graceful_shutdown=5.0,  # Graceful shutdown timeout (5 seconds)
     )
+
+
+def main() -> None:
+    """
+    Main entry point for demo API service (backward compatibility)
+    
+    This function is kept for backward compatibility when called directly
+    as a module (e.g., `python -m apflow_demo.main`).
+    For CLI usage, use `apflow-demo serve` instead.
+    """
+    start_server()
 
 
 if __name__ == "__main__":

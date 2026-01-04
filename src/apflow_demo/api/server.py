@@ -71,6 +71,23 @@ def _create_custom_routes() -> List[Route]:
     routes.append(Route("/api/demo/tasks/init-status", check_demo_init_status_handler, methods=["GET"]))
     logger.info("Added demo routes: /api/demo/tasks/init-executors (POST), /api/demo/tasks/init-status (GET)")
     
+    # User management routes
+    from apflow_demo.api.routes.user_routes import UserRoutes
+    user_routes = UserRoutes()
+    
+    async def list_users_handler(request: Request):
+        limit = int(request.query_params.get("limit", 20))
+        status = request.query_params.get("status")
+        return await user_routes.handle_list_users(request, limit=limit, status=status)
+    
+    async def user_stats_handler(request: Request):
+        period = request.query_params.get("period", "all")
+        return await user_routes.handle_user_stats(request, period=period)
+    
+    routes.append(Route("/api/users/list", list_users_handler, methods=["GET"]))
+    routes.append(Route("/api/users/stats", user_stats_handler, methods=["GET"]))
+    logger.info("Added user routes: /api/users/list (GET), /api/users/stats (GET)")
+    
     # Executor metadata routes
     from apflow_demo.api.routes.executor_routes import ExecutorRoutes
     executor_routes = ExecutorRoutes()

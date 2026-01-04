@@ -44,7 +44,7 @@ dev = [
 ]
 
 [project.scripts]
-apflow-demo = "apflow_demo.main:main"
+apflow-demo = "apflow_demo.cli:main"
 
 [project.entry-points."apflow.cli_plugins"]
 users = "apflow_demo.cli.users:users_app"
