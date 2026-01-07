@@ -3,6 +3,7 @@ Demo settings configuration
 """
 
 import os
+from pathlib import Path
 from typing import Optional
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -45,7 +46,7 @@ class DemoSettings(BaseSettings):
     
     # JWT (optional, defaults to demo secret key if not provided)
     apflow_jwt_secret_key: Optional[str] = os.getenv(
-        "APFLOW_JWT_SECRET_KEY",
+        "APFLOW_JWT_SECRET",
         os.getenv("JWT_SECRET_KEY", "demo-secret-key-change-in-production")
     )
     apflow_jwt_algorithm: str = os.getenv("APFLOW_JWT_ALGORITHM", "HS256")
@@ -59,6 +60,34 @@ class DemoSettings(BaseSettings):
     
     # Database URL
     database_url: Optional[str] = os.getenv("DATABASE_URL")
+
+    def model_post_init(self, __context: object) -> None:
+        """Initialize settings and ensure JWT secret is written to .env"""
+        self._ensure_jwt_secret_in_env()
+
+    def _ensure_jwt_secret_in_env(self) -> None:
+        """Ensure APFLOW_JWT_SECRET is in .env file for apflow-demo command"""
+        env_file = Path(".env")
+        
+        # Check if APFLOW_JWT_SECRET is already set from environment
+        if os.getenv("APFLOW_JWT_SECRET") or os.getenv("JWT_SECRET_KEY"):
+            return
+        
+        # Check if .env file exists and already has APFLOW_JWT_SECRET
+        if env_file.exists():
+            content = env_file.read_text()
+            if "APFLOW_JWT_SECRET" in content:
+                return
+        
+        # Write or append APFLOW_JWT_SECRET to .env
+        if env_file.exists():
+            with open(env_file, "a", encoding="utf-8") as f:
+                f.write("\n# JWT Secret for apflow\n")
+                f.write(f"APFLOW_JWT_SECRET={self.apflow_jwt_secret_key}\n")
+        else:
+            with open(env_file, "w", encoding="utf-8") as f:
+                f.write("# JWT Secret for apflow\n")
+                f.write(f"APFLOW_JWT_SECRET={self.apflow_jwt_secret_key}\n")
     
     def get_apflow_env(self) -> dict[str, str]:
         """Get environment variables for apflow"""
@@ -72,7 +101,7 @@ class DemoSettings(BaseSettings):
         if self.apflow_base_url:
             env["APFLOW_BASE_URL"] = self.apflow_base_url
         if self.apflow_jwt_secret_key:
-            env["APFLOW_JWT_SECRET_KEY"] = self.apflow_jwt_secret_key
+            env["APFLOW_JWT_SECRET"] = self.apflow_jwt_secret_key
         if self.apflow_jwt_algorithm:
             env["APFLOW_JWT_ALGORITHM"] = self.apflow_jwt_algorithm
         if self.apflow_enable_system_routes:

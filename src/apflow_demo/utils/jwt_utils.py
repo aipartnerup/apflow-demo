@@ -57,7 +57,7 @@ def verify_demo_jwt_token(token: str) -> Optional[Dict[str, Any]]:
     Returns:
         Token payload if valid, None otherwise
     """
-    secret_key = settings.apflow_jwt_secret_key or "demo-secret-key-change-in-production"
+    secret_key = settings.apflow_jwt_secret_key
     algorithm = settings.apflow_jwt_algorithm
     
     # Use apflow's verify_token (uses python-jose internally)

@@ -43,7 +43,7 @@ def _check_admin_auth(request: Request) -> bool:
     # Check if .env has JWT_SECRET_KEY set (not using default)
     from apflow_demo.config.settings import settings
     env_has_jwt_secret = bool(
-        os.getenv("APFLOW_JWT_SECRET_KEY") or os.getenv("JWT_SECRET_KEY")
+        os.getenv("APFLOW_JWT_SECRET") or os.getenv("JWT_SECRET_KEY")
     )
     
     logger.debug(f"Checking admin auth: env_has_jwt_secret={env_has_jwt_secret}, token_prefix={token[:20] if token else None}...")
