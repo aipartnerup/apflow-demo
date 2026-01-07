@@ -47,7 +47,7 @@ class DemoSettings(BaseSettings):
     # JWT (optional, defaults to demo secret key if not provided)
     apflow_jwt_secret_key: Optional[str] = os.getenv(
         "APFLOW_JWT_SECRET",
-        os.getenv("JWT_SECRET_KEY", "demo-secret-key-change-in-production")
+        "demo-secret-key-change-in-production"
     )
     apflow_jwt_algorithm: str = os.getenv("APFLOW_JWT_ALGORITHM", "HS256")
     
@@ -70,7 +70,7 @@ class DemoSettings(BaseSettings):
         env_file = Path(".env")
         
         # Check if APFLOW_JWT_SECRET is already set from environment
-        if os.getenv("APFLOW_JWT_SECRET") or os.getenv("JWT_SECRET_KEY"):
+        if os.getenv("APFLOW_JWT_SECRET"):
             return
         
         # Check if .env file exists and already has APFLOW_JWT_SECRET

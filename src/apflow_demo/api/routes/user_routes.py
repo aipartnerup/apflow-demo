@@ -21,7 +21,7 @@ def _check_admin_auth(request: Request) -> bool:
     Checks Authorization header or cookie for admin JWT token.
     Supports both API server's JWT secret and CLI's JWT secret.
     
-    If .env has no JWT_SECRET_KEY, allows admin tokens from CLI config.
+    If .env has no APFLOW_JWT_SECRET, allows admin tokens from CLI config.
     """
     from apflow.api.a2a.server import verify_token
     from pathlib import Path
@@ -40,10 +40,10 @@ def _check_admin_auth(request: Request) -> bool:
         logger.debug("No token found in Authorization header or cookie")
         return False
     
-    # Check if .env has JWT_SECRET_KEY set (not using default)
+    # Check if .env has APFLOW_JWT_SECRET set (not using default)
     from apflow_demo.config.settings import settings
     env_has_jwt_secret = bool(
-        os.getenv("APFLOW_JWT_SECRET") or os.getenv("JWT_SECRET_KEY")
+        os.getenv("APFLOW_JWT_SECRET")
     )
     
     logger.debug(f"Checking admin auth: env_has_jwt_secret={env_has_jwt_secret}, token_prefix={token[:20] if token else None}...")
@@ -62,7 +62,7 @@ def _check_admin_auth(request: Request) -> bool:
     
     # Always try CLI's JWT secret (from config.cli.yaml)
     # This is needed when CLI generates tokens with its own secret
-    # Even if .env has JWT_SECRET_KEY, CLI tokens may use different secret
+    # Even if .env has APFLOW_JWT_SECRET, CLI tokens may use different secret
     try:
         # Try multiple possible locations for config.cli.yaml
         possible_paths = [

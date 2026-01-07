@@ -11,6 +11,7 @@ services:
       - .env
     volumes:
       - ./.data:/app/.data
+      - ./.env:/app/.env
     # Set default values if .env file doesn't exist or variables are not set
     environment:
       - DEMO_MODE=${DEMO_MODE:-true}
