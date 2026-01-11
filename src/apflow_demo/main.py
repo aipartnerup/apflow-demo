@@ -117,6 +117,10 @@ def start_server() -> None:
     
     Then registers demo-specific hooks and middleware.
     """
+
+    print("Starting apflow-demo service...")
+    logger.info("Start apflow-demo service...")
+
     # Load environment variables
     _load_environment_variables()
     

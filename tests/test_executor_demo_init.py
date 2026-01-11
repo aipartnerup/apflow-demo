@@ -369,7 +369,6 @@ async def test_check_demo_init_status_partial_tasks(test_user_id, cleanup_tasks)
             priority=2,
             progress=0.0,
             has_children=False,
-            has_copy=False,
             parent_id=None,
             dependencies=None,
         )
@@ -467,7 +466,6 @@ async def test_check_demo_init_status_executor_details(test_user_id, cleanup_tas
                 priority=2,
                 progress=0.0,
                 has_children=False,
-                has_copy=False,
                 parent_id=None,
                 dependencies=None,
             )

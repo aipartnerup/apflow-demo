@@ -59,7 +59,7 @@ class DemoSettings(BaseSettings):
     apflow_cors_origins: Optional[str] = os.getenv("APFLOW_CORS_ORIGINS")
     
     # Database URL
-    database_url: Optional[str] = os.getenv("DATABASE_URL")
+    database_url: Optional[str] = os.getenv("APFLOW_DATABASE_URL") or os.getenv("DATABASE_URL")
 
     def model_post_init(self, __context: object) -> None:
         """Initialize settings and ensure JWT secret is written to .env"""

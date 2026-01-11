@@ -633,7 +633,7 @@ class ExecutorDemoInitService:
                         priority=2,
                         progress=0.0,
                         has_children=task_data.get("has_children", False),
-                        has_copy=False,
+                        has_references=task_data.get("has_references", False),
                         parent_id=task_data.get("parent_id"),
                         dependencies=task_data.get("dependencies"),
                     )

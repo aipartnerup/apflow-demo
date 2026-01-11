@@ -28,7 +28,8 @@ def _initialize_database():
         from dotenv import load_dotenv
         load_dotenv(dotenv_path=env_path)
 
-    if not os.getenv("DATABASE_URL"):
+    db = os.getenv("APFLOW_DATABASE_URL") or os.getenv("DATABASE_URL")
+    if not db:
         data_dir = project_root / ".data"
         data_dir.mkdir(parents=True, exist_ok=True)
         db_path = data_dir / "apflow-demo.duckdb"

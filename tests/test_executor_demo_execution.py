@@ -15,7 +15,7 @@ from apflow.core.storage import create_pooled_session
 from apflow.core.storage.sqlalchemy.task_repository import TaskRepository
 from apflow.core.config import get_task_model_class
 from apflow.core.extensions.registry import get_registry
-from apflow.core.utils.logger import get_logger
+from apflow.logger import get_logger
 
 # Import executors to ensure they are registered
 try:
