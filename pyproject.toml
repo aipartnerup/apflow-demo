@@ -43,8 +43,8 @@ dev = [
     "apscheduler>=3.10.0",
 ]
 
-[project.scripts]
-apflow-demo = "apflow_demo.cli:main"
+#[project.scripts]
+#apflow-demo = "apflow_demo.cli:main"
 
 [project.entry-points."apflow.cli_plugins"]
 users = "apflow_demo.cli.users:users_app"
