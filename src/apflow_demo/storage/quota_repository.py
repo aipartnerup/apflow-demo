@@ -9,6 +9,7 @@ from typing import Optional, Dict, Any, Union, List
 from sqlalchemy import and_, func as sql_func, select, delete
 from sqlalchemy.orm import Session
 from sqlalchemy.ext.asyncio import AsyncSession
+from apflow.core.storage.sqlalchemy.session_proxy import SqlalchemySessionProxy
 
 from apflow_demo.storage.models import (
     QuotaCounter,
@@ -22,8 +23,7 @@ class QuotaRepository:
     """Repository for quota and rate limiting data"""
     
     def __init__(self, session: Union[Session, AsyncSession]):
-        self.session = session
-        self.is_async = isinstance(session, AsyncSession)
+        self.session = SqlalchemySessionProxy(session)
     
     async def get_quota_count(
         self,
@@ -42,11 +42,8 @@ class QuotaRepository:
             )
         )
         
-        if self.is_async:
-            result = await self.session.execute(stmt)
-        else:
-            result = self.session.execute(stmt)
-            
+        result = await self.session.execute(stmt)
+        
         counter = result.scalar_one_or_none()
         return counter.count if counter else 0
     
@@ -68,10 +65,7 @@ class QuotaRepository:
             )
         )
         
-        if self.is_async:
-            result = await self.session.execute(stmt)
-        else:
-            result = self.session.execute(stmt)
+        result = await self.session.execute(stmt)
             
         counter = result.scalar_one_or_none()
         
@@ -87,10 +81,7 @@ class QuotaRepository:
             )
             self.session.add(counter)
         
-        if self.is_async:
-            await self.session.commit()
-        else:
-            self.session.commit()
+        await self.session.commit()
             
         return counter.count
     
@@ -109,10 +100,7 @@ class QuotaRepository:
             )
         )
         
-        if self.is_async:
-            result = await self.session.execute(stmt)
-        else:
-            result = self.session.execute(stmt)
+        result = await self.session.execute(stmt)
             
         counter = result.scalar_one_or_none()
         return counter.count if counter else 0
@@ -133,10 +121,7 @@ class QuotaRepository:
             )
         )
         
-        if self.is_async:
-            result = await self.session.execute(stmt)
-        else:
-            result = self.session.execute(stmt)
+        result = await self.session.execute(stmt)
             
         counter = result.scalar_one_or_none()
         
@@ -151,10 +136,7 @@ class QuotaRepository:
             )
             self.session.add(counter)
         
-        if self.is_async:
-            await self.session.commit()
-        else:
-            self.session.commit()
+        await self.session.commit()
             
         return counter.count
     
@@ -174,20 +156,14 @@ class QuotaRepository:
             )
         )
         
-        if self.is_async:
-            result = await self.session.execute(stmt)
-        else:
-            result = self.session.execute(stmt)
+        result = await self.session.execute(stmt)
             
         counter = result.scalar_one_or_none()
         
         if counter:
             counter.count = max(0, counter.count - amount)
             counter.updated_at = datetime.now(timezone.utc)
-            if self.is_async:
-                await self.session.commit()
-            else:
-                self.session.commit()
+            await self.session.commit()
             return counter.count
         
         return 0
@@ -207,10 +183,7 @@ class QuotaRepository:
             is_llm_consuming='true' if is_llm_consuming else 'false',
         )
         self.session.add(tracking)
-        if self.is_async:
-            await self.session.commit()
-        else:
-            self.session.commit()
+        await self.session.commit()
     
     async def complete_task_tree(
         self,
@@ -223,19 +196,13 @@ class QuotaRepository:
             TaskTreeTracking.task_tree_id == task_tree_id
         )
         
-        if self.is_async:
-            result = await self.session.execute(stmt)
-        else:
-            result = self.session.execute(stmt)
+        result = await self.session.execute(stmt)
             
         tracking = result.scalar_one_or_none()
         
         if tracking:
             tracking.completed_at = datetime.now(timezone.utc)
-            if self.is_async:
-                await self.session.commit()
-            else:
-                self.session.commit()
+            await self.session.commit()
         
         return tracking
     
@@ -253,10 +220,7 @@ class QuotaRepository:
             )
         )
         
-        if self.is_async:
-            result = await self.session.execute(stmt)
-        else:
-            result = self.session.execute(stmt)
+        result = await self.session.execute(stmt)
             
         return result.scalar_one_or_none()
     
@@ -274,10 +238,7 @@ class QuotaRepository:
             )
         )
         
-        if self.is_async:
-            result = await self.session.execute(stmt)
-        else:
-            result = self.session.execute(stmt)
+        result = await self.session.execute(stmt)
             
         return result.scalars().all()
     
@@ -299,10 +260,7 @@ class QuotaRepository:
             )
         )
         
-        if self.is_async:
-            result = await self.session.execute(stmt)
-        else:
-            result = self.session.execute(stmt)
+        result = await self.session.execute(stmt)
             
         stat = result.scalar_one_or_none()
         
@@ -318,10 +276,7 @@ class QuotaRepository:
             )
             self.session.add(stat)
         
-        if self.is_async:
-            await self.session.commit()
-        else:
-            self.session.commit()
+        await self.session.commit()
             
         return stat.count
     
@@ -342,10 +297,7 @@ class QuotaRepository:
             )
         )
         
-        if self.is_async:
-            result = await self.session.execute(stmt)
-        else:
-            result = self.session.execute(stmt)
+        result = await self.session.execute(stmt)
             
         stat = result.scalar_one_or_none()
         return stat.count if stat else 0
@@ -370,16 +322,10 @@ class QuotaRepository:
             )
         )
         
-        if self.is_async:
-            r1 = await self.session.execute(quota_stmt)
-            r2 = await self.session.execute(usage_stmt)
-            r3 = await self.session.execute(tracking_stmt)
-            await self.session.commit()
-        else:
-            r1 = self.session.execute(quota_stmt)
-            r2 = self.session.execute(usage_stmt)
-            r3 = self.session.execute(tracking_stmt)
-            self.session.commit()
+        r1 = await self.session.execute(quota_stmt)
+        r2 = await self.session.execute(usage_stmt)
+        r3 = await self.session.execute(tracking_stmt)
+        await self.session.commit()
             
         return r1.rowcount + r2.rowcount + r3.rowcount
 

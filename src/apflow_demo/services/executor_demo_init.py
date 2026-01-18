@@ -655,37 +655,23 @@ class ExecutorDemoInitService:
             # This avoids "Task got Future attached to a different loop" errors
             async with create_pooled_session() as db_session:
                 task_repository = TaskRepository(db_session, task_model_class=TaskModel)
-                is_async = task_repository.is_async
-                
+                db_session = task_repository.db
                 try:
                     # Add tasks to session sequentially with explicit timestamp and flush to ensure distinct timestamps
                     # Set timestamp before each flush to ensure each task gets a distinct created_at
-                    if is_async:
-                        # For async, add tasks one by one, set timestamp, flush, then sleep
-                        for task_obj in task_objects:
-                            # Set timestamp explicitly before flush to ensure distinct created_at
-                            current_timestamp = datetime.now(timezone.utc)
-                            task_obj.created_at = current_timestamp
-                            task_obj.updated_at = current_timestamp
-                            db_session.add(task_obj)
-                            # Flush to database
-                            await db_session.flush()
-                            # Sleep 100ms between each task to ensure distinct created_at timestamps
-                            await asyncio.sleep(0.1)
-                        await db_session.commit()
-                    else:
-                        # For sync, add tasks one by one, set timestamp, flush, then sleep
-                        for task_obj in task_objects:
-                            # Set timestamp explicitly before flush to ensure distinct created_at
-                            current_timestamp = datetime.now(timezone.utc)
-                            task_obj.created_at = current_timestamp
-                            task_obj.updated_at = current_timestamp
-                            db_session.add(task_obj)
-                            # Flush to database
-                            db_session.flush()
-                            # Sleep 100ms between each task to ensure distinct created_at timestamps
-                            time.sleep(0.1)
-                        db_session.commit()
+                    # For async, add tasks one by one, set timestamp, flush, then sleep
+                    for task_obj in task_objects:
+                        # Set timestamp explicitly before flush to ensure distinct created_at
+                        current_timestamp = datetime.now(timezone.utc)
+                        task_obj.created_at = current_timestamp
+                        task_obj.updated_at = current_timestamp
+                        db_session.add(task_obj)
+                        # Flush to database
+                        await db_session.flush()
+                        # Sleep 100ms between each task to ensure distinct created_at timestamps
+                        await asyncio.sleep(0.1)
+                    await db_session.commit()
+                    
                     
                     logger.info(f"Successfully created {len(task_objects)} demo tasks using TaskRepository API")
                 except RuntimeError as e:
@@ -704,10 +690,7 @@ class ExecutorDemoInitService:
                         )
                     # Rollback on error
                     try:
-                        if is_async:
-                            await db_session.rollback()
-                        else:
-                            db_session.rollback()
+                        await db_session.rollback()
                     except Exception as rollback_err:
                         logger.debug(f"Rollback error (ignored): {rollback_err}")
                     # Return empty list on failure
@@ -719,10 +702,7 @@ class ExecutorDemoInitService:
                     )
                     # Rollback on error
                     try:
-                        if is_async:
-                            await db_session.rollback()
-                        else:
-                            db_session.rollback()
+                        await db_session.rollback()
                     except Exception as rollback_err:
                         logger.debug(f"Rollback error (ignored): {rollback_err}")
                     # Return empty list on failure
