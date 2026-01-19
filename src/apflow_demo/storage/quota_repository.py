@@ -9,7 +9,7 @@ from typing import Optional, Dict, Any, Union, List
 from sqlalchemy import and_, func as sql_func, select, delete
 from sqlalchemy.orm import Session
 from sqlalchemy.ext.asyncio import AsyncSession
-from apflow.core.storage.sqlalchemy.session_proxy import SqlalchemySessionProxy
+from sqlalchemy_session_proxy import SqlalchemySessionProxy
 
 from apflow_demo.storage.models import (
     QuotaCounter,

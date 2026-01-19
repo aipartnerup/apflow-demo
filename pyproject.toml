@@ -29,6 +29,7 @@ dependencies = [
     "python-dotenv>=1.0.0",          # Environment variables
     "pydantic>=2.0.0",                # Data validation
     "pydantic-settings>=2.0.0",      # Settings management
+    "sqlalchemy-session-proxy>=0.1.0",
 ]
 
 [project.optional-dependencies]
