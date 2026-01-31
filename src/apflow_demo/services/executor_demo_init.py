@@ -155,7 +155,7 @@ def _generate_demo_task_for_system_info_executor(
         "id": parent_task_id,
         "name": f"Demo: {executor_name} (Aggregate)",
         "user_id": user_id,
-        "schemas": {"method": "aggregate_results_executor"},
+        "schemas": {"method": executor_id},  # Use system_info_executor, not aggregate_results_executor
         "inputs": {
             "_demo_runnable": True,
             "_demo_requirements": None
@@ -289,6 +289,14 @@ def _generate_demo_task_for_executor(
     elif executor_id == "aggregate_results_executor":
         # For aggregate_results_executor, inputs will be populated by TaskManager
         demo_inputs = {}
+        demo_runnable = True
+        demo_requirements = None
+    elif executor_id == "scrape_executor":
+        demo_inputs = {
+            "url": "https://aipartnerup.com",
+            "extract_metadata": True,
+            "max_chars": 5000
+        }
         demo_runnable = True
         demo_requirements = None
     else:

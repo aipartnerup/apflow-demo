@@ -15,7 +15,9 @@ from apflow.core.storage.sqlalchemy.task_repository import TaskRepository
 from apflow.core.config import get_task_model_class
 from apflow.core.extensions.executor_metadata import get_all_executor_metadata
 
-# Import executors to ensure they are registered
+# Import executors to ensure they are registered in tests
+# Production code uses auto_initialize_extensions=True in create_runnable_app()
+# which automatically loads all extensions via ExtensionScanner
 try:
     import apflow.extensions.docker.docker_executor
     import apflow.extensions.stdio.command_executor
@@ -26,6 +28,7 @@ try:
     import apflow.extensions.apflow.api_executor
     import apflow.extensions.mcp.mcp_executor
     import apflow.extensions.grpc.grpc_executor
+    import apflow.extensions.scrape.scrape_executor
 except ImportError as e:
     print(f"Warning: Failed to import some executors: {e}")
 

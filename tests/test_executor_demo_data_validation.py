@@ -14,7 +14,9 @@ from apflow.core.storage.sqlalchemy.task_repository import TaskRepository
 from apflow.core.config import get_task_model_class
 from apflow.core.extensions.executor_metadata import get_all_executor_metadata
 
-# Import executors to ensure they are registered
+# Import executors to ensure they are registered in tests
+# Production code uses auto_initialize_extensions=True in create_runnable_app()
+# which automatically loads all extensions via ExtensionScanner
 try:
     import apflow.extensions.docker.docker_executor
     import apflow.extensions.stdio.command_executor
@@ -25,6 +27,7 @@ try:
     import apflow.extensions.apflow.api_executor
     import apflow.extensions.mcp.mcp_executor
     import apflow.extensions.grpc.grpc_executor
+    import apflow.extensions.scrape.scrape_executor
 except ImportError as e:
     print(f"Warning: Failed to import some executors: {e}")
 
@@ -35,8 +38,45 @@ def test_user_id():
     return "test_user_detailed_validation_12345"
 
 
+@pytest.fixture
+async def cleanup_test_data(test_user_id):
+    """Clean up old demo tasks for this test user before and after tests"""
+    # Clean up before test
+    async with create_pooled_session() as db_session:
+        from sqlalchemy import select, delete
+        from sqlalchemy.ext.asyncio import AsyncSession
+        
+        TaskModel = get_task_model_class()
+        
+        # Delete all demo tasks for this user
+        stmt = delete(TaskModel).where(
+            (TaskModel.user_id == test_user_id) & 
+            (TaskModel.name.like("Demo:%"))
+        )
+        
+        # Check if session is async
+        if isinstance(db_session, AsyncSession):
+            await db_session.execute(stmt)
+            await db_session.commit()
+        else:
+            db_session.execute(stmt)
+            db_session.commit()
+    
+    yield  # Run test
+    
+    # Clean up after test (optional, but good practice)
+    # Commented out to preserve test data for debugging
+    # async with create_pooled_session() as db_session:
+    #     stmt = delete(TaskModel).where(
+    #         (TaskModel.user_id == test_user_id) & 
+    #         (TaskModel.name.like("Demo:%"))
+    #     )
+    #     await db_session.execute(stmt)
+    #     await db_session.commit()
+
+
 @pytest.mark.asyncio
-async def test_task_data_structure_completeness(test_user_id):
+async def test_task_data_structure_completeness(test_user_id, cleanup_test_data):
     """Test that task data structure is complete and correct"""
     service = ExecutorDemoInitService()
     
@@ -88,7 +128,7 @@ async def test_task_data_structure_completeness(test_user_id):
 
 
 @pytest.mark.asyncio
-async def test_task_inputs_validation(test_user_id):
+async def test_task_inputs_validation(test_user_id, cleanup_test_data):
     """Test that task inputs are valid according to executor schema"""
     service = ExecutorDemoInitService()
     
@@ -125,9 +165,7 @@ async def test_task_inputs_validation(test_user_id):
             required = input_schema.get('required', [])
             
             # Skip required field check for aggregate tasks (they have no inputs)
-            # Aggregate tasks use aggregate_results_executor which doesn't require inputs
-            if executor_id == 'aggregate_results_executor' and task.inputs == {}:
-                continue
+            # Parent tasks for system_info_executor use system_info_executor and have empty inputs
             
             # Check required fields are present
             missing_required = [field for field in required if field not in task.inputs]
@@ -170,7 +208,7 @@ async def test_task_inputs_validation(test_user_id):
 
 
 @pytest.mark.asyncio
-async def test_task_id_uniqueness_and_format(test_user_id):
+async def test_task_id_uniqueness_and_format(test_user_id, cleanup_test_data):
     """Test that task IDs are unique and follow correct format"""
     service = ExecutorDemoInitService()
     
@@ -233,7 +271,7 @@ async def test_task_id_uniqueness_and_format(test_user_id):
 
 
 @pytest.mark.asyncio
-async def test_all_executors_have_demo_tasks(test_user_id):
+async def test_all_executors_have_demo_tasks(test_user_id, cleanup_test_data):
     """Test that demo tasks exist for all available executors"""
     service = ExecutorDemoInitService()
     
