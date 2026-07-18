@@ -1,3 +1,31 @@
+> # ⚠️ ARCHIVED — not maintained, does not run against current apflow
+>
+> This repository is **archived** as of 2026-07-18 and is kept for reference only.
+>
+> **Why:** `apflow-demo` was a *hosted, anonymous public trial layer* for apflow
+> (rate limiting, per-user quota, browser-fingerprint identity, BYO-key). It is
+> pinned to **apflow 0.17.0**, while apflow is now **0.22.1** — a full
+> architecture generation ahead. apflow 0.22 removed the integration seams this
+> demo relied on (`apflow.api.a2a.server` tokens, `llm_key_context`, the typer
+> CLI-plugin API, route-class injection), so **this code no longer installs or
+> runs** without a rewrite-scale migration.
+>
+> **What to use instead:**
+> - **Learn / try apflow** → the apflow repo's own `examples/quickstart.py`,
+>   `docs/getting-started/`, and `llms.txt`.
+> - **Interactive UI** → [`apflow-webapp`](https://github.com/aiperceivable/apflow-webapp)
+>   (self-hosted, for trusted/authenticated users).
+>
+> **Why it's kept, not deleted:** the anonymous rate-limit / quota / BYO-key
+> machinery here is a ready-made blueprint if a hosted public SaaS trial is ever
+> revived — it should be **rebuilt against the then-current apflow**, not resurrected
+> from this 0.17-era code.
+>
+> The rest of this README describes the demo as it was at archival and is retained
+> for historical context.
+
+---
+
 # apflow-demo
 
 Demo deployment of apflow with rate limiting and quota management.
